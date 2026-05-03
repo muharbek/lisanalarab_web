@@ -4,9 +4,32 @@ const https = require("https");
 const crypto = require("crypto");
 require("dotenv").config();
 
+// Main checkout site after YooKassa payment (used if PUBLIC_ORIGIN is not set on Render).
+const DEFAULT_PUBLIC_ORIGIN = "https://lisanalarab-web.onrender.com";
+
 const app = express();
-app.use(cors());
+
+// Explicit CORS so browsers always get ACAO on preflight and POST (checkout page is another origin).
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "HEAD", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Accept"],
+    maxAge: 86400,
+  })
+);
+app.options("/create-payment", (_req, res) => res.sendStatus(204));
+
 app.use(express.json());
+
+// Health check: use in Render "Health Check Path" (/), or open in browser to confirm the Web Service is up.
+app.get("/", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "lisanalarab-backend",
+    createPayment: "POST /create-payment",
+  });
+});
 
 // Shop ID is public; prefer YOOKASSA_SHOP_ID on Render. Default matches your YooKassa shop.
 const SHOP_ID = String(process.env.YOOKASSA_SHOP_ID || "1347048").trim();
@@ -50,16 +73,10 @@ function yooKassaPostPayment(idempotenceKey, authorization, bodyStr) {
 
 app.post("/create-payment", async (req, res) => {
   try {
-    const publicOrigin = String(process.env.PUBLIC_ORIGIN || "")
-      .trim()
-      .replace(/\/$/, "");
-    if (!publicOrigin) {
-      return res.status(500).json({
-        error: "missing_public_origin",
-        description:
-          "Set PUBLIC_ORIGIN on Render to your checkout page HTTPS URL (no trailing slash).",
-      });
-    }
+    const publicOrigin = String(
+      (process.env.PUBLIC_ORIGIN && process.env.PUBLIC_ORIGIN.trim()) ||
+        DEFAULT_PUBLIC_ORIGIN
+    ).replace(/\/$/, "");
     if (!SECRET_KEY) {
       return res.status(500).json({
         error: "missing_env",
@@ -67,6 +84,7 @@ app.post("/create-payment", async (req, res) => {
       });
     }
 
+    // After successful payment YooKassa redirects to this URL (PUBLIC_ORIGIN or default main site).
     const returnUrl = `${publicOrigin}/?vip_return=1`;
     const paymentPayload = {
       amount: { value: "1000.00", currency: "RUB" },

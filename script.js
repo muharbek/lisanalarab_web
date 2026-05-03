@@ -1,6 +1,7 @@
 (function () {
   var STORAGE_KEY = "lisan_web_pay_form";
-  var DEFAULT_CREATE_PAYMENT_URL = "https://lisanalarab-backend.onrender.com/create-payment";
+  var DEFAULT_CREATE_PAYMENT_URL =
+    "https://lisanalarab-backend-5lbb.onrender.com/create-payment";
 
   var b = document.getElementById("activate-vip");
   var m = document.getElementById("checkout-message");
@@ -164,11 +165,13 @@
             b.disabled = false;
             return;
           }
-          var pay =
-            (d.confirmation && d.confirmation.confirmation_url) || d.confirmation_url;
-          if (pay) {
+          // Backend returns confirmation_url from YooKassa; redirect user to the hosted payment page.
+          var confirmationUrl =
+            d.confirmation_url ||
+            (d.confirmation && d.confirmation.confirmation_url);
+          if (confirmationUrl) {
             saveFormToStorage();
-            window.location.href = pay;
+            window.location.href = confirmationUrl;
             return;
           }
           msg("Нет ссылки на оплату в ответе.", "error");
@@ -177,7 +180,12 @@
       })
       .catch(function () {
         msg(
-          "Браузер не получил ответ от API (часто из‑за CORS или того, что на Render нет работающего сервиса по этому URL). Задеплойте сервер из папки render (npm start), в Environment задайте YOOKASSA_SECRET_KEY и PUBLIC_ORIGIN (HTTPS страницы оплаты), затем сверьте адрес с мета-тегом lisan-create-payment-url.",
+          "Запрос к «" +
+            url +
+            "» не выполнился (нет ответа, CORS или сервис спит). " +
+            "На Render должен быть именно Web Service с командой npm start из корня этого репозитория; в Environment нужен YOOKASSA_SECRET_KEY (PUBLIC_ORIGIN по умолчанию уже задан в коде бэкенда). " +
+            "Откройте в браузере базовый URL сервиса (без /create-payment) — если не открывается JSON с ok:true, мета-тег lisan-create-payment-url указывает не на тот сервис. " +
+            "На бесплатном тарифе первый запрос после простоя может занять 1–2 минуты — подождите и нажмите снова.",
           "error"
         );
         b.disabled = false;
