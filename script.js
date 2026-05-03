@@ -1,5 +1,6 @@
 (function () {
   var STORAGE_KEY = "lisan_web_pay_form";
+  var DEFAULT_CREATE_PAYMENT_URL = "https://lisanalarab-backend.onrender.com/create-payment";
 
   var b = document.getElementById("activate-vip");
   var m = document.getElementById("checkout-message");
@@ -70,10 +71,14 @@
 
   function fnUrl() {
     try {
-      return new URL("/.netlify/functions/create-payment", window.location.origin).href;
-    } catch (e) {
-      return "/.netlify/functions/create-payment";
-    }
+      var el = document.querySelector('meta[name="lisan-create-payment-url"]');
+      var c = el && el.getAttribute("content");
+      if (c) {
+        var s = String(c).trim();
+        if (s) return s;
+      }
+    } catch (e) {}
+    return DEFAULT_CREATE_PAYMENT_URL;
   }
 
   function postJson(url, bodyStr) {
@@ -81,7 +86,7 @@
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: bodyStr,
-      credentials: "same-origin",
+      credentials: "omit",
       cache: "no-store",
       mode: "cors",
     }).catch(function () {
@@ -108,7 +113,7 @@
 
   b.addEventListener("click", function () {
     if (location.protocol === "file:") {
-      msg("Откройте сайт по HTTPS на Netlify (не файл с диска).", "error");
+      msg("Откройте сайт по HTTPS (не файл с диска).", "error");
       return;
     }
     if (!location.origin || location.origin === "null") {
@@ -126,11 +131,17 @@
       return;
     }
 
+    var password = (passEl && passEl.value) || "";
+    if (!password) {
+      msg("Введите пароль из приложения.", "error");
+      return;
+    }
+
     b.disabled = true;
     msg("Создаём платёж для " + email + "…", "neutral");
 
     var url = fnUrl();
-    var payload = JSON.stringify({ email: email });
+    var payload = JSON.stringify({ email: email, password: password });
     postJson(url, payload)
       .then(function (r) {
         return r.text().then(function (t) {
@@ -139,7 +150,7 @@
             d = t ? JSON.parse(t) : {};
           } catch (e) {
             msg(
-              "Сервер не вернул JSON. Проверьте деплой функции create-payment и настройки Netlify.",
+              "Сервер не вернул JSON. Проверьте, что бэкенд на Render отвечает на create-payment.",
               "error"
             );
             b.disabled = false;
@@ -174,7 +185,7 @@
       })
       .catch(function (e) {
         msg(
-          "Не удалось отправить запрос. Проверьте HTTPS, функции Netlify и интернет.",
+          "Не удалось отправить запрос. Проверьте интернет и доступность сервера на Render.",
           "error"
         );
         b.disabled = false;
