@@ -89,25 +89,6 @@
       credentials: "omit",
       cache: "no-store",
       mode: "cors",
-    }).catch(function () {
-      return new Promise(function (resolve, reject) {
-        var xhr = new XMLHttpRequest();
-        xhr.open("POST", url);
-        xhr.setRequestHeader("Content-Type", "application/json");
-        xhr.onload = function () {
-          resolve({
-            ok: xhr.status >= 200 && xhr.status < 300,
-            status: xhr.status,
-            text: function () {
-              return Promise.resolve(xhr.responseText || "");
-            },
-          });
-        };
-        xhr.onerror = function () {
-          reject(new Error("XHR"));
-        };
-        xhr.send(bodyStr);
-      });
     });
   }
 
@@ -145,12 +126,23 @@
     postJson(url, payload)
       .then(function (r) {
         return r.text().then(function (t) {
+          var raw = (t || "").trim();
           var d = {};
+
+          if (r.status === 404 || /^not\s*found$/i.test(raw)) {
+            msg(
+              "Платёжный сервер не найден по этому адресу (404): Web Service на Render не запущен, удалён или URL в мета-теге не совпадает с сервисом. Откройте Render → ваш сервис → скопируйте точный URL и обновите lisan-create-payment-url.",
+              "error"
+            );
+            b.disabled = false;
+            return;
+          }
+
           try {
-            d = t ? JSON.parse(t) : {};
+            d = raw ? JSON.parse(raw) : {};
           } catch (e) {
             msg(
-              "Сервер не вернул JSON. Проверьте, что бэкенд на Render отвечает на create-payment.",
+              "Ответ сервера не JSON — проверьте деплой API и путь /create-payment.",
               "error"
             );
             b.disabled = false;
@@ -183,9 +175,9 @@
           b.disabled = false;
         });
       })
-      .catch(function (e) {
+      .catch(function () {
         msg(
-          "Не удалось отправить запрос. Проверьте интернет и доступность сервера на Render.",
+          "Браузер не получил ответ от API (часто из‑за CORS или того, что на Render нет работающего сервиса по этому URL). Задеплойте сервер из папки render (npm start), в Environment задайте YOOKASSA_SECRET_KEY и PUBLIC_ORIGIN (HTTPS страницы оплаты), затем сверьте адрес с мета-тегом lisan-create-payment-url.",
           "error"
         );
         b.disabled = false;
