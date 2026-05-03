@@ -1,45 +1,131 @@
-const express = require('express');
-const cors = require('cors');
-const YooKassa = require('yookassa-node-sdk');
-require('dotenv').config();
+const express = require("express");
+const cors = require("cors");
+const https = require("https");
+const crypto = require("crypto");
+require("dotenv").config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Инициализация с твоим Shop ID
-const checkout = new YooKassa({ 
-    shopId: '445946', 
-    secretKey: process.env.YOOKASSA_SECRET_KEY 
-});
+// Shop ID is public; prefer YOOKASSA_SHOP_ID on Render. Default matches your YooKassa shop.
+const SHOP_ID = String(process.env.YOOKASSA_SHOP_ID || "1347048").trim();
+// Secret key must ONLY be set via environment (Render dashboard or local .env — never commit it).
+const SECRET_KEY =
+  process.env.YOOKASSA_SECRET_KEY &&
+  String(process.env.YOOKASSA_SECRET_KEY).trim();
 
-app.post('/create-payment', async (req, res) => {
-    try {
-        const payment = await checkout.createPayment({
-            amount: {
-                value: '1000.00',
-                currency: 'RUB'
-            },
-            payment_method_data: {
-                type: 'bank_card'
-            },
-            confirmation: {
-                type: 'redirect',
-                return_url: process.env.PUBLIC_ORIGIN || 'https://lisanalarab-web.onrender.com'
-            },
-            description: 'Lisan Al-Arab Course Payment',
-            capture: true
+/**
+ * HTTPS POST to YooKassa Payments API (no third-party npm SDK — avoids missing/404 packages on npm).
+ */
+function yooKassaPostPayment(idempotenceKey, authorization, bodyStr) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: "api.yookassa.ru",
+        path: "/v3/payments",
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(bodyStr, "utf8"),
+          "Idempotence-Key": idempotenceKey,
+        },
+      },
+      (ykRes) => {
+        let raw = "";
+        ykRes.on("data", (chunk) => {
+          raw += chunk;
         });
-        
-        console.log('Payment created:', payment.id);
-        res.json({ confirmation_url: payment.confirmation.confirmation_url });
-    } catch (error) {
-        console.error('YooKassa Error:', error);
-        res.status(500).json({ error: error.message });
+        ykRes.on("end", () => {
+          resolve({ statusCode: ykRes.statusCode, raw });
+        });
+      }
+    );
+    req.on("error", reject);
+    req.write(bodyStr);
+    req.end();
+  });
+}
+
+app.post("/create-payment", async (req, res) => {
+  try {
+    const publicOrigin = String(process.env.PUBLIC_ORIGIN || "")
+      .trim()
+      .replace(/\/$/, "");
+    if (!publicOrigin) {
+      return res.status(500).json({
+        error: "missing_public_origin",
+        description:
+          "Set PUBLIC_ORIGIN on Render to your checkout page HTTPS URL (no trailing slash).",
+      });
     }
+    if (!SECRET_KEY) {
+      return res.status(500).json({
+        error: "missing_env",
+        description: "Set YOOKASSA_SECRET_KEY on Render.",
+      });
+    }
+
+    const returnUrl = `${publicOrigin}/?vip_return=1`;
+    const paymentPayload = {
+      amount: { value: "1000.00", currency: "RUB" },
+      capture: true,
+      confirmation: {
+        type: "redirect",
+        return_url: returnUrl,
+      },
+      description: "Lisan Al-Arab Course Payment",
+    };
+
+    const bodyStr = JSON.stringify(paymentPayload);
+    const auth =
+      "Basic " +
+      Buffer.from(`${SHOP_ID}:${SECRET_KEY}`, "utf8").toString("base64");
+
+    const { statusCode, raw } = await yooKassaPostPayment(
+      crypto.randomUUID(),
+      auth,
+      bodyStr
+    );
+
+    let parsed = {};
+    try {
+      parsed = raw ? JSON.parse(raw) : {};
+    } catch {
+      parsed = { description: raw ? String(raw).slice(0, 200) : "empty body" };
+    }
+
+    const confirmationUrl =
+      parsed.confirmation && parsed.confirmation.confirmation_url;
+
+    if (statusCode >= 200 && statusCode < 300 && confirmationUrl) {
+      console.log("Payment created:", parsed.id);
+      return res.json({
+        confirmation_url: confirmationUrl,
+        confirmation: {
+          type: "redirect",
+          confirmation_url: confirmationUrl,
+        },
+      });
+    }
+
+    const message =
+      parsed.description ||
+      parsed.type ||
+      (typeof parsed === "string" ? parsed : "yookassa_error");
+    return res.status(statusCode >= 400 ? statusCode : 502).json({
+      error: parsed.type || "payment_failed",
+      description: message,
+      details: parsed,
+    });
+  } catch (error) {
+    console.error("YooKassa Error:", error);
+    return res.status(500).json({ error: error.message || String(error) });
+  }
 });
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-    console.log(`Backend server is running on port ${PORT}`);
+  console.log(`Backend server is running on port ${PORT}`);
 });
