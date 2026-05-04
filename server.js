@@ -10,17 +10,21 @@ const admin = require("firebase-admin");
 // YooKassa: official REST API v3 via https (npm package "yookassa-sdk-v3" does not exist on the registry).
 // Firebase Admin: ONLY process.env.FIREBASE_SERVICE_ACCOUNT — never require("serviceAccountKey.json") or any key file.
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
+  try {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+    });
+  } catch (e) {
+    console.error("Firebase Admin init failed:", e.message);
+  }
 }
 
 // Main checkout site after YooKassa payment (used if PUBLIC_ORIGIN is not set on Render).
 const DEFAULT_PUBLIC_ORIGIN = "https://lisanalarab-web.onrender.com";
 
 const INVALID_APP_LOGIN_MESSAGE =
-  "Invalid email or password from your app account.";
+  "Неверная почта или пароль учётной записи приложения.";
 
 const SHOP_ID = String(process.env.YOOKASSA_SHOP_ID || "1347048").trim();
 const SECRET_KEY =

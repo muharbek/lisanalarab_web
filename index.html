@@ -100,14 +100,10 @@
       <div class="panel-inner activation-card">
         <h2 id="access-heading" class="panel-title">Активировать полный доступ</h2>
         <p class="panel-note">
-          Укажите ту же почту и пароль, что в приложении «Лисан аль-Араб». Сначала вход проверяется на сервере, затем открывается оплата YooKassa.
-        </p>
-        <p class="panel-note panel-note--secondary" lang="en">
-          <strong>Pay:</strong> enter your app email and password, then click Pay — your account is verified before YooKassa opens.
+          Укажите ту же почту и пароль, что в приложении «Лисан аль-Араб». Сервер проверяет пароль через Firebase; после успешной проверки откроется оплата YooKassa, а после оплаты VIP привяжется к почте (вебхук).
         </p>
 
-        <div class="auth-form auth-form--before-pay" id="pay-credentials" aria-labelledby="login-fields-heading">
-          <h3 id="login-fields-heading" class="form-section-title" lang="en">Sign in (app account)</h3>
+        <div class="auth-form auth-form--before-pay" id="pay-credentials">
           <label class="field">
             <span class="field-label">Электронная почта</span>
             <input
@@ -141,8 +137,8 @@
           <p class="panel-tariff__summary">Общая стоимость — 150 рублей.</p>
           <div class="yookassa-payment-form">
             <p id="checkout-message" class="form-message checkout-message" role="status" aria-live="polite"></p>
-            <button type="button" id="activate-vip" class="btn-yookassa-pay" lang="en">
-              Pay (150₽)
+            <button type="button" id="activate-vip" class="btn-yookassa-pay">
+              Активировать подписку (150₽)
             </button>
           </div>
         </div>

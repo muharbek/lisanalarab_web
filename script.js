@@ -4,7 +4,7 @@
     "https://lisanalarab-backend-5lbb.onrender.com/create-payment";
 
   var INVALID_APP_LOGIN =
-    "Invalid email or password from your app account.";
+    "Неверная почта или пароль учётной записи приложения.";
 
   var b = document.getElementById("activate-vip");
   var m = document.getElementById("checkout-message");
@@ -12,7 +12,7 @@
   var passEl = document.getElementById("pay-password");
   if (!b) return;
 
-  /** Match Firebase Auth: trim + lower case. */
+  /** Как в приложении: trim + lower case для почты. */
   function normalizeClientEmail(raw) {
     if (raw == null || raw === "") return "";
     return String(raw).trim().toLowerCase();
@@ -85,23 +85,6 @@
     return DEFAULT_CREATE_PAYMENT_URL;
   }
 
-  /** Same Render service: /verify-app-login and /create-payment share origin. */
-  function apiOrigin() {
-    try {
-      return new URL(fnCreatePaymentUrl()).origin;
-    } catch (e) {
-      try {
-        return new URL(DEFAULT_CREATE_PAYMENT_URL).origin;
-      } catch (e2) {
-        return "";
-      }
-    }
-  }
-
-  function verifyAppLoginUrl() {
-    return apiOrigin() + "/verify-app-login";
-  }
-
   function postJson(url, bodyStr) {
     return fetch(url, {
       method: "POST",
@@ -111,18 +94,6 @@
       cache: "no-store",
       mode: "cors",
     });
-  }
-
-  function parseJsonBody(t) {
-    var raw = (t || "").trim();
-    if (raw === "" || /^not\s*found$/i.test(raw)) {
-      return { parseError: true, notFound: /^not\s*found$/i.test(raw), raw: raw };
-    }
-    try {
-      return { data: raw ? JSON.parse(raw) : {} };
-    } catch (e) {
-      return { parseError: true, raw: raw };
-    }
   }
 
   b.addEventListener("click", function () {
@@ -147,103 +118,65 @@
 
     var password = (passEl && passEl.value) || "";
     if (!password) {
-      msg("Введите пароль из приложения.", "error");
+      msg("Введите пароль из приложения — без него нельзя проверить учётную запись.", "error");
       return;
     }
 
-    var createUrl = fnCreatePaymentUrl();
-    var verifyUrl = verifyAppLoginUrl();
-    if (!verifyUrl || verifyUrl.indexOf("/verify-app-login") === -1) {
-      msg("Некорректный адрес API. Проверьте мета-тег lisan-create-payment-url.", "error");
-      return;
-    }
-
-    var authPayload = JSON.stringify({ email: email, password: password });
+    var url = fnCreatePaymentUrl();
+    var payload = JSON.stringify({ email: email, password: password });
 
     b.disabled = true;
-    msg("Проверяем учётную запись приложения…", "neutral");
+    msg("Создаём платёж для " + email + "…", "neutral");
 
-    postJson(verifyUrl, authPayload)
+    postJson(url, payload)
       .then(function (r) {
         return r.text().then(function (t) {
           return { r: r, t: t };
         });
       })
-      .then(function (_ref) {
-        var r = _ref.r;
-        var t = _ref.t;
-        if (r.status === 404 || /^not\s*found$/i.test((t || "").trim())) {
+      .then(function (ref) {
+        var r = ref.r;
+        var t = ref.t;
+        var raw = (t || "").trim();
+
+        if (r.status === 404 || /^not\s*found$/i.test(raw)) {
           msg(
-            "Сервер проверки входа не найден (404). Проверьте URL бэкенда на Render и мета-тег lisan-create-payment-url.",
+            "Платёжный сервер не найден (404). Проверьте URL в мета-теге lisan-create-payment-url и деплой на Render.",
             "error"
           );
-          b.disabled = false;
-          return;
-        }
-        var parsed = parseJsonBody(t);
-        if (parsed.parseError) {
-          msg("Ответ сервера при проверке входа не JSON.", "error");
-          b.disabled = false;
-          return;
-        }
-        var d = parsed.data;
-        if (!r.ok) {
-          msg(
-            (d && d.message) ||
-              (d && d.description) ||
-              (r.status === 401 ? INVALID_APP_LOGIN : "Ошибка проверки входа: " + r.status),
-            "error"
-          );
-          b.disabled = false;
-          return;
-        }
-        if (!d || !d.ok) {
-          msg(INVALID_APP_LOGIN, "error");
           b.disabled = false;
           return;
         }
 
-        msg("Создаём платёж для " + email + "…", "neutral");
-        return postJson(createUrl, authPayload).then(function (r2) {
-          return r2.text().then(function (t2) {
-            return { r: r2, t: t2 };
-          });
-        });
-      })
-      .then(function (second) {
-        if (!second) return;
-        var r = second.r;
-        var t = second.t;
-        if (r.status === 404 || /^not\s*found$/i.test((t || "").trim())) {
-          msg(
-            "Платёжный сервер не найден (404). Обновите мета-тег lisan-create-payment-url.",
-            "error"
-          );
+        var d = {};
+        try {
+          d = raw ? JSON.parse(raw) : {};
+        } catch (e) {
+          msg("Ответ сервера не JSON — проверьте бэкенд /create-payment.", "error");
           b.disabled = false;
           return;
         }
-        var parsed = parseJsonBody(t);
-        if (parsed.parseError) {
-          msg("Ответ сервера при создании платежа не JSON.", "error");
-          b.disabled = false;
-          return;
-        }
-        var d = parsed.data;
+
         if (!r.ok) {
           msg(
-            (d && d.description) ||
-              (d && d.message) ||
-              (r.status === 401 ? INVALID_APP_LOGIN : d.error || "Ошибка " + r.status),
+            r.status === 401
+              ? d.description || d.message || INVALID_APP_LOGIN
+              : d.description ||
+                  (d.details && d.details.description) ||
+                  d.error ||
+                  "Ошибка " + r.status,
             "error"
           );
           b.disabled = false;
           return;
         }
+
         if (d.customer_email && normalizeClientEmail(d.customer_email) !== email) {
           msg("Внутренняя ошибка: почта в ответе не совпадает. Обновите страницу и попробуйте снова.", "error");
           b.disabled = false;
           return;
         }
+
         var confirmationUrl =
           d.confirmation_url ||
           (d.confirmation && d.confirmation.confirmation_url);
@@ -257,11 +190,9 @@
       })
       .catch(function () {
         msg(
-          "Запрос к API не выполнился (сеть или CORS). Проверьте: «" +
-            verifyAppLoginUrl() +
-            "» и «" +
+          "Запрос к «" +
             fnCreatePaymentUrl() +
-            "».",
+            "» не выполнился (сеть или CORS). Проверьте, что бэкенд на Render запущен.",
           "error"
         );
         b.disabled = false;
