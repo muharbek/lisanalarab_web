@@ -7,18 +7,12 @@ const crypto = require("crypto");
 const ipRangeCheck = require("ip-range-check");
 const admin = require("firebase-admin");
 
-// Firebase Admin: credentials ONLY from env (never require/import a local JSON key file).
+// Firebase Admin: FIREBASE_SERVICE_ACCOUNT env only (never load a JSON key file from disk).
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-  try {
-    const serviceAccount = JSON.parse(
-      String(process.env.FIREBASE_SERVICE_ACCOUNT).trim()
-    );
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
-  } catch (err) {
-    console.error("Firebase Admin init failed:", err.message);
-  }
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
 }
 
 // Main checkout site after YooKassa payment (used if PUBLIC_ORIGIN is not set on Render).
@@ -87,12 +81,12 @@ function yookassaMetadataValue(s) {
   return t.length > 256 ? t.slice(0, 256) : t;
 }
 
-function httpsJsonRequest(hostname, pathWithQuery, method, headers, bodyStr) {
+function httpsJsonRequest(hostname, httpPath, method, headers, bodyStr) {
   return new Promise((resolve, reject) => {
     const req = https.request(
       {
         hostname,
-        path: pathWithQuery,
+        path: httpPath,
         method,
         headers: {
           "Content-Type": "application/json",
@@ -166,7 +160,7 @@ async function verifyAppCredentials(emailNorm, password) {
     e.statusCode = 503;
     throw e;
   }
-  const path =
+  const identityToolkitPath =
     "/v1/accounts:signInWithPassword?key=" +
     encodeURIComponent(FIREBASE_WEB_API_KEY);
   const bodyStr = JSON.stringify({
@@ -176,7 +170,7 @@ async function verifyAppCredentials(emailNorm, password) {
   });
   const { statusCode, raw } = await httpsJsonRequest(
     "identitytoolkit.googleapis.com",
-    path,
+    identityToolkitPath,
     "POST",
     {},
     bodyStr

@@ -1,3 +1,4 @@
+// Example Firestore security rules only — no API keys or private credentials belong in this file.
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
