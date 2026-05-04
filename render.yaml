@@ -10,6 +10,8 @@ services:
     startCommand: npm start
     healthCheckPath: /
     envVars:
+      - key: NODE_VERSION
+        value: "20.18.1"
       - key: YOOKASSA_SECRET_KEY
         sync: false
       - key: PUBLIC_ORIGIN

@@ -7,7 +7,8 @@ const crypto = require("crypto");
 const ipRangeCheck = require("ip-range-check");
 const admin = require("firebase-admin");
 
-// Firebase Admin: FIREBASE_SERVICE_ACCOUNT env only (never load a JSON key file from disk).
+// YooKassa: official REST API v3 via https (npm package "yookassa-sdk-v3" does not exist on the registry).
+// Firebase Admin: ONLY process.env.FIREBASE_SERVICE_ACCOUNT — never require("serviceAccountKey.json") or any key file.
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
   admin.initializeApp({
