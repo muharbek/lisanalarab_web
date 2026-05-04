@@ -1,10 +1,25 @@
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const https = require("https");
 const crypto = require("crypto");
 const ipRangeCheck = require("ip-range-check");
 const admin = require("firebase-admin");
-require("dotenv").config();
+
+// Firebase Admin: credentials ONLY from env (never require/import a local JSON key file).
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    const serviceAccount = JSON.parse(
+      String(process.env.FIREBASE_SERVICE_ACCOUNT).trim()
+    );
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+    });
+  } catch (err) {
+    console.error("Firebase Admin init failed:", err.message);
+  }
+}
 
 // Main checkout site after YooKassa payment (used if PUBLIC_ORIGIN is not set on Render).
 const DEFAULT_PUBLIC_ORIGIN = "https://lisanalarab-web.onrender.com";
@@ -131,46 +146,18 @@ function ykAuthHeader() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Firebase Admin — only process.env.FIREBASE_SERVICE_ACCOUNT (never a file path or hardcoded keys).
-// ---------------------------------------------------------------------------
-
 function ensureFirebaseAdmin() {
-  if (admin.apps.length) return;
-  if (
-    !process.env.FIREBASE_SERVICE_ACCOUNT ||
-    !String(process.env.FIREBASE_SERVICE_ACCOUNT).trim()
-  ) {
-    const e = new Error("FIREBASE_SERVICE_ACCOUNT is not set");
+  if (!admin.apps.length) {
+    const e = new Error(
+      "Firebase Admin not initialized — set FIREBASE_SERVICE_ACCOUNT to valid JSON on Render"
+    );
     e.statusCode = 503;
     throw e;
   }
-  let serviceAccount;
-  try {
-    serviceAccount = JSON.parse(
-      String(process.env.FIREBASE_SERVICE_ACCOUNT).trim()
-    );
-  } catch {
-    try {
-      serviceAccount = JSON.parse(
-        Buffer.from(
-          String(process.env.FIREBASE_SERVICE_ACCOUNT).trim(),
-          "base64"
-        ).toString("utf8")
-      );
-    } catch {
-      const err = new Error(
-        "FIREBASE_SERVICE_ACCOUNT must be valid one-line JSON or base64-encoded JSON"
-      );
-      err.statusCode = 503;
-      throw err;
-    }
-  }
-  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 
 // ---------------------------------------------------------------------------
-// Firebase Auth — verify email/password via Identity Toolkit REST (Admin SDK cannot check passwords).
+// Firebase Auth — verify email/password via Identity Toolkit REST
 // ---------------------------------------------------------------------------
 
 async function verifyAppCredentials(emailNorm, password) {
@@ -226,7 +213,7 @@ async function verifyAppCredentials(emailNorm, password) {
 }
 
 // ---------------------------------------------------------------------------
-// Firestore — grant VIP after verified YooKassa payment
+// Firestore — VIP after verified YooKassa payment (webhook)
 // ---------------------------------------------------------------------------
 
 function clientIpFromReq(req) {
@@ -286,11 +273,7 @@ async function grantVipForEmail(emailNorm, paymentId) {
     const userRecord = await admin.auth().getUserByEmail(emailNorm);
     batch.set(
       db.collection(USERS_COLLECTION).doc(userRecord.uid),
-      {
-        isVip: true,
-        vip_updated_at: admin.firestore.FieldValue.serverTimestamp(),
-        vip_payment_id: paymentId,
-      },
+      { isVip: true },
       { merge: true }
     );
     updated = true;
@@ -302,15 +285,7 @@ async function grantVipForEmail(emailNorm, paymentId) {
       .get();
     if (!snap.empty) {
       snap.forEach((doc) => {
-        batch.set(
-          doc.ref,
-          {
-            isVip: true,
-            vip_updated_at: admin.firestore.FieldValue.serverTimestamp(),
-            vip_payment_id: paymentId,
-          },
-          { merge: true }
-        );
+        batch.set(doc.ref, { isVip: true }, { merge: true });
         updated = true;
       });
     }
