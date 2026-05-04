@@ -308,6 +308,22 @@ body {
   line-height: 1.5;
 }
 
+.panel-note--secondary {
+  margin-top: -0.65rem;
+  font-size: 0.84rem;
+  opacity: 0.92;
+}
+
+.form-section-title {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(180, 188, 205, 0.85);
+}
+
 .auth-form {
   display: flex;
   flex-direction: column;

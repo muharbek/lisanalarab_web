@@ -1,0 +1,22 @@
+# Optional Render Blueprint: connect repo → New Blueprint Instance, or use as reference for manual Web Service setup.
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: lisanalarab-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: YOOKASSA_SECRET_KEY
+        sync: false
+      - key: PUBLIC_ORIGIN
+        sync: false
+      - key: YOOKASSA_SHOP_ID
+        sync: false
+      - key: FIREBASE_WEB_API_KEY
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
