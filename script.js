@@ -26,6 +26,19 @@
     m.textContent = t || "";
     if (tone) m.dataset.tone = tone;
     else delete m.dataset.tone;
+    if (tone !== "success") delete m.dataset.celebrate;
+  }
+
+  function showVipPaymentBanner(messageText) {
+    var banner = document.getElementById("vip-payment-banner");
+    var msgEl = document.getElementById("vip-payment-banner__message");
+    if (msgEl && messageText) msgEl.textContent = messageText;
+    if (banner) {
+      banner.hidden = false;
+      try {
+        banner.scrollIntoView({ behavior: "smooth", block: "center" });
+      } catch (e) {}
+    }
   }
 
   function cleanReturnUrlParams() {
@@ -103,11 +116,12 @@
               try {
                 sessionStorage.removeItem(PAYMENT_ID_KEY);
               } catch (e3) {}
-              msg(
+              var successCopy =
                 d.description ||
-                  "Вы активировали VIP. Полный доступ включён.",
-                "success"
-              );
+                "Вы активировали VIP. Полный доступ уже записан в ваш аккаунт — откройте приложение с этой же почтой.";
+              showVipPaymentBanner(successCopy);
+              msg("VIP активирован — полный доступ для этого аккаунта.", "success");
+              if (m) m.dataset.celebrate = "1";
               cleanReturnUrlParams();
               return;
             }

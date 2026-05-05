@@ -554,6 +554,62 @@ body {
   color: rgba(232, 236, 244, 0.9);
 }
 
+.vip-payment-banner {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  margin: 0 0 1.35rem;
+  padding: 1.15rem 1.2rem;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--gold-ring);
+  background: linear-gradient(
+    135deg,
+    rgba(212, 175, 55, 0.22) 0%,
+    rgba(18, 25, 43, 0.92) 45%,
+    rgba(23, 26, 43, 0.95) 100%
+  );
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(212, 175, 55, 0.12) inset;
+}
+
+.vip-payment-banner__check {
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--btn-text-on-gold);
+  background: linear-gradient(145deg, var(--gold-bright), var(--gold));
+  box-shadow: 0 4px 14px var(--gold-glow);
+}
+
+.vip-payment-banner__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.vip-payment-banner__headline {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-serif);
+  font-size: clamp(1.35rem, 4.5vw, 1.75rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.vip-payment-banner__message {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: clamp(0.95rem, 3.2vw, 1.05rem);
+  font-weight: 500;
+  line-height: 1.5;
+  color: rgba(232, 238, 248, 0.92);
+}
+
 .yookassa-payment-form {
   margin: 0;
   text-align: center;
@@ -578,6 +634,13 @@ body {
 
 .checkout-message[data-tone="success"] {
   color: var(--success);
+}
+
+.checkout-message[data-celebrate="1"] {
+  font-size: clamp(1rem, 3vw, 1.15rem);
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--gold-bright);
 }
 
 .btn-yookassa-pay,

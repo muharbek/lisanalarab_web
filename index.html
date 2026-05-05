@@ -98,6 +98,15 @@
 
     <section class="access-panel access-panel--raised" aria-labelledby="access-heading">
       <div class="panel-inner activation-card">
+        <div id="vip-payment-banner" class="vip-payment-banner" hidden role="status" aria-live="polite">
+          <div class="vip-payment-banner__check" aria-hidden="true">✓</div>
+          <div class="vip-payment-banner__body">
+            <p class="vip-payment-banner__headline">Оплата подтверждена</p>
+            <p id="vip-payment-banner__message" class="vip-payment-banner__message">
+              Вы активировали VIP — полный доступ включён для этого аккаунта.
+            </p>
+          </div>
+        </div>
         <h2 id="access-heading" class="panel-title">Активировать полный доступ</h2>
         <p class="panel-note">
           Укажите ту же почту и пароль, что в приложении «Лисан аль-Араб», затем нажмите «Активировать подписку» — откроется оплата YooKassa (сессия создаётся через API на сервере Render).
