@@ -7,7 +7,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",
     "firebase-admin": "^12.6.0",
-    "ip-range-check": "^0.4.0"
+    "ip-range-check": "^0.2.0"
   },
   "scripts": {
     "start": "node server.js"
