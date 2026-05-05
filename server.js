@@ -6,8 +6,9 @@ const ipRangeCheck = require("ip-range-check");
 const admin = require("firebase-admin");
 require("dotenv").config();
 
-// Main checkout site after YooKassa payment (used if PUBLIC_ORIGIN is not set on Render).
-const DEFAULT_PUBLIC_ORIGIN = "https://lisanalarab-web.onrender.com";
+// Main checkout site after YooKassa payment.
+// Keep this hardcoded to avoid wrong env values (e.g. underscore in domain).
+const FIXED_PUBLIC_ORIGIN = "https://lisanalarab-web.onrender.com";
 
 const app = express();
 
@@ -269,10 +270,7 @@ function yooKassaPostPayment(idempotenceKey, authorization, bodyStr) {
 
 app.post("/create-payment", async (req, res) => {
   try {
-    const publicOrigin = String(
-      (process.env.PUBLIC_ORIGIN && process.env.PUBLIC_ORIGIN.trim()) ||
-        DEFAULT_PUBLIC_ORIGIN
-    ).replace(/\/$/, "");
+    const publicOrigin = FIXED_PUBLIC_ORIGIN;
     if (!SECRET_KEY) {
       return res.status(500).json({
         error: "missing_env",
