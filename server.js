@@ -270,8 +270,8 @@ app.post("/create-payment", async (req, res) => {
       });
     }
 
-    // After payment YooKassa redirects here; open_app=1 lets the checkout page try the custom URL scheme for the iOS app.
-    const returnUrl = `${publicOrigin}/?vip_return=1&open_app=1`;
+    // After payment YooKassa returns user to the website.
+    const returnUrl = `${publicOrigin}/?vip_return=1`;
     const paymentPayload = {
       amount: { value: "150.00", currency: "RUB" },
       capture: true,

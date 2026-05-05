@@ -108,9 +108,6 @@
                   "Вы активировали VIP. Полный доступ включён.",
                 "success"
               );
-              if (pageUrl.searchParams.get("open_app") === "1") {
-                window.location.href = "lisanalarab://vip-paid";
-              }
               cleanReturnUrlParams();
               return;
             }
