@@ -89,6 +89,37 @@ function ensureAdmin() {
   admin.initializeApp({ credential: admin.credential.cert(json) });
 }
 
+async function grantVipByEmail(email, paymentId) {
+  ensureAdmin();
+  const db = admin.firestore();
+  const user = await admin.auth().getUserByEmail(email);
+  const uid = user.uid;
+  const batch = db.batch();
+  batch.set(
+    db.collection("users").doc(uid),
+    {
+      is_vip: true,
+      vip_purchase_email: email,
+      vip_updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      last_payment_id: paymentId || null,
+    },
+    { merge: true }
+  );
+  if (paymentId) {
+    batch.set(
+      db.collection("yookassa_processed_payments").doc(paymentId),
+      {
+        email,
+        uid,
+        processed_at: admin.firestore.FieldValue.serverTimestamp(),
+        source: "verify-vip-payment",
+      },
+      { merge: true }
+    );
+  }
+  await batch.commit();
+}
+
 function pendingDocId(email) {
   return Buffer.from(email, "utf8")
     .toString("base64")
@@ -401,12 +432,24 @@ app.post("/verify-vip-payment", async (req, res) => {
     }
 
     if (status === "succeeded") {
-      return res.json({
-        verified: true,
-        payment_status: status,
-        description:
-          "Вы активировали VIP. Полный доступ включён — откройте приложение с этой же почтой.",
-      });
+      try {
+        await grantVipByEmail(email, paymentId);
+        return res.json({
+          verified: true,
+          payment_status: status,
+          description:
+            "Вы активировали VIP. Полный доступ включён и уже записан в аккаунт.",
+        });
+      } catch (e) {
+        return res.json({
+          verified: true,
+          payment_status: status,
+          warning: "vip_not_written",
+          description:
+            "Оплата подтверждена, но не удалось записать VIP в Firestore. Проверьте FIREBASE_SERVICE_ACCOUNT_JSON и попробуйте снова.",
+          details: String((e && e.message) || e || "unknown"),
+        });
+      }
     }
 
     if (status === "pending" || status === "waiting_for_capture") {
