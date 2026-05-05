@@ -19,6 +19,7 @@ app.use(
   })
 );
 app.options("/create-payment", (_req, res) => res.sendStatus(204));
+app.options("/verify-vip-payment", (_req, res) => res.sendStatus(204));
 
 app.use(express.json());
 
@@ -28,6 +29,7 @@ app.get("/", (_req, res) => {
     ok: true,
     service: "lisanalarab-backend",
     createPayment: "POST /create-payment",
+    verifyPayment: "POST /verify-vip-payment",
   });
 });
 
@@ -39,8 +41,10 @@ const SECRET_KEY =
   String(process.env.YOOKASSA_SECRET_KEY).trim();
 
 const FIREBASE_WEB_API_KEY =
-  process.env.FIREBASE_WEB_API_KEY &&
-  String(process.env.FIREBASE_WEB_API_KEY).trim();
+  (process.env.FIREBASE_WEB_API_KEY &&
+    String(process.env.FIREBASE_WEB_API_KEY).trim()) ||
+  // Fallback from the same Firebase project used by the mobile app (GoogleService-Info.plist API_KEY).
+  "AIzaSyC7Tk1r7sc1432lml3qKifAJDo4xa8DrlY";
 
 /**
  * HTTPS POST to YooKassa Payments API (no third-party npm SDK — avoids missing/404 packages on npm).
@@ -105,6 +109,41 @@ function firebaseSignInWithPassword(apiKey, email, password) {
   });
 }
 
+function yooKassaAuthHeader() {
+  if (!SECRET_KEY) return null;
+  return (
+    "Basic " +
+    Buffer.from(`${SHOP_ID}:${SECRET_KEY}`, "utf8").toString("base64")
+  );
+}
+
+function yooKassaGetPayment(paymentId, authorization) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: "api.yookassa.ru",
+        path: `/v3/payments/${encodeURIComponent(paymentId)}`,
+        method: "GET",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+      },
+      (ykRes) => {
+        let raw = "";
+        ykRes.on("data", (chunk) => {
+          raw += chunk;
+        });
+        ykRes.on("end", () => {
+          resolve({ statusCode: ykRes.statusCode, raw });
+        });
+      }
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
 function yooKassaPostPayment(idempotenceKey, authorization, bodyStr) {
   return new Promise((resolve, reject) => {
     const req = https.request(
@@ -148,14 +187,6 @@ app.post("/create-payment", async (req, res) => {
       });
     }
 
-    if (!FIREBASE_WEB_API_KEY) {
-      return res.status(500).json({
-        error: "missing_firebase_config",
-        description:
-          "Set FIREBASE_WEB_API_KEY on Render (Firebase Console → Project settings → Web API key, same project as the mobile app GoogleService-Info.plist API_KEY).",
-      });
-    }
-
     const email = normalizeEmail(req.body && req.body.email);
     const password = String((req.body && req.body.password) || "");
 
@@ -180,13 +211,17 @@ app.post("/create-payment", async (req, res) => {
     // After payment YooKassa redirects here; open_app=1 lets the checkout page try the custom URL scheme for the iOS app.
     const returnUrl = `${publicOrigin}/?vip_return=1&open_app=1`;
     const paymentPayload = {
-      amount: { value: "1000.00", currency: "RUB" },
+      amount: { value: "150.00", currency: "RUB" },
       capture: true,
       confirmation: {
         type: "redirect",
         return_url: returnUrl,
       },
       description: "Lisan Al-Arab Course Payment",
+      metadata: {
+        customer_email: email,
+        source: "lisan_web_checkout",
+      },
     };
 
     const bodyStr = JSON.stringify(paymentPayload);
@@ -219,6 +254,7 @@ app.post("/create-payment", async (req, res) => {
           confirmation_url: confirmationUrl,
         },
         customer_email: email,
+        yookassa_payment_id: parsed.id,
       });
     }
 
@@ -233,6 +269,101 @@ app.post("/create-payment", async (req, res) => {
     });
   } catch (error) {
     console.error("YooKassa Error:", error);
+    return res.status(500).json({ error: error.message || String(error) });
+  }
+});
+
+/**
+ * After redirect from YooKassa: verify payment status via API so we only show VIP success when really paid.
+ */
+app.post("/verify-vip-payment", async (req, res) => {
+  try {
+    const authHeader = yooKassaAuthHeader();
+    if (!authHeader) {
+      return res.status(500).json({
+        error: "missing_env",
+        description: "Set YOOKASSA_SECRET_KEY on Render.",
+      });
+    }
+
+    const email = normalizeEmail(req.body && req.body.email);
+    const password = String((req.body && req.body.password) || "");
+    const paymentId = String((req.body && req.body.payment_id) || "").trim();
+
+    if (!email || !password || !paymentId) {
+      return res.status(400).json({
+        error: "invalid_body",
+        description:
+          "Нужны email, password и payment_id для проверки статуса платежа.",
+      });
+    }
+
+    try {
+      await firebaseSignInWithPassword(FIREBASE_WEB_API_KEY, email, password);
+    } catch {
+      return res.status(401).json({
+        error: "invalid_credentials",
+        description:
+          "Неверная почта или пароль. Введите те же данные, что в приложении.",
+      });
+    }
+
+    const { statusCode, raw } = await yooKassaGetPayment(paymentId, authHeader);
+    let payment = {};
+    try {
+      payment = raw ? JSON.parse(raw) : {};
+    } catch {
+      payment = {};
+    }
+
+    if (statusCode < 200 || statusCode >= 300) {
+      return res.status(200).json({
+        verified: false,
+        payment_status: null,
+        description:
+          "Не удалось получить статус платежа в YooKassa. Попробуйте позже.",
+      });
+    }
+
+    const status = payment.status || "";
+    const metaEmail = normalizeEmail(
+      payment.metadata && payment.metadata.customer_email
+    );
+    if (metaEmail && metaEmail !== email) {
+      return res.status(200).json({
+        verified: false,
+        payment_status: status,
+        description:
+          "Этот платёж привязан к другой почте. Войдите с правильным аккаунтом.",
+      });
+    }
+
+    if (status === "succeeded") {
+      return res.json({
+        verified: true,
+        payment_status: status,
+        description:
+          "Вы активировали VIP. Полный доступ включён — откройте приложение с этой же почтой.",
+      });
+    }
+
+    if (status === "pending" || status === "waiting_for_capture") {
+      return res.json({
+        verified: false,
+        payment_status: status,
+        description:
+          "Платёж ещё обрабатывается. Обновите страницу через минуту или откройте приложение позже.",
+      });
+    }
+
+    return res.json({
+      verified: false,
+      payment_status: status || "unknown",
+      description:
+        "Оплата не завершена или отменена. Если списали деньги — подождите несколько минут и обновите страницу.",
+    });
+  } catch (error) {
+    console.error("verify-vip-payment:", error);
     return res.status(500).json({ error: error.message || String(error) });
   }
 });

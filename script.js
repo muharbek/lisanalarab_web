@@ -1,5 +1,6 @@
 (function () {
   var STORAGE_KEY = "lisan_web_pay_form";
+  var PAYMENT_ID_KEY = "lisan_pending_payment_id";
   var DEFAULT_CREATE_PAYMENT_URL =
     "https://lisanalarab-backend-5lbb.onrender.com/create-payment";
 
@@ -27,25 +28,108 @@
     else delete m.dataset.tone;
   }
 
-  function handleReturnFromPayment() {
+  function cleanReturnUrlParams() {
     try {
       var u = new URL(window.location.href);
-      if (u.searchParams.get("vip_return") !== "1") return;
-      var em = normalizeClientEmail(emailEl && emailEl.value);
-      var line =
-        em && isOkEmail(em)
-          ? "Оплата прошла успешно. Полный доступ (VIP) привязан к почте " +
-            em +
-            ". Открываем приложение… Если не открылось — запустите «Лисан аль‑Араб» вручную; доступ подтянется с сервера."
-          : "Оплата прошла успешно. Открываем приложение… Если не открылось — войдите в «Лисан аль‑Араб» с той же почтой — VIP обновится автоматически.";
-      msg(line, "success");
-      if (u.searchParams.get("open_app") === "1") {
-        window.location.href = "lisanalarab://vip-paid";
-      }
       u.searchParams.delete("vip_return");
       u.searchParams.delete("open_app");
       var qs = u.searchParams.toString();
       window.history.replaceState({}, "", u.pathname + (qs ? "?" + qs : "") + u.hash);
+    } catch (e) {}
+  }
+
+  /**
+   * Only show VIP success after server confirms YooKassa payment status (succeeded).
+   */
+  function handleReturnFromPayment() {
+    try {
+      var pageUrl = new URL(window.location.href);
+      if (pageUrl.searchParams.get("vip_return") !== "1") return;
+
+      var paymentId = "";
+      try {
+        paymentId = sessionStorage.getItem(PAYMENT_ID_KEY) || "";
+      } catch (e) {}
+
+      var email = normalizeClientEmail(emailEl && emailEl.value);
+      var password = (passEl && passEl.value) || "";
+
+      if (!paymentId) {
+        msg(
+          "Не удалось проверить оплату автоматически. Если вы оплатили, войдите в приложение «Лисан аль‑Араб» с той же почтой — VIP обновится.",
+          "error"
+        );
+        cleanReturnUrlParams();
+        return;
+      }
+
+      if (!email || !password) {
+        msg(
+          "Чтобы подтвердить VIP, введите ту же почту и пароль, что перед оплатой, и обновите страницу.",
+          "error"
+        );
+        return;
+      }
+
+      msg("Проверяем оплату в YooKassa…", "neutral");
+
+      var verifyUrl = fnUrl().replace(/\/?create-payment\/?$/i, "/verify-vip-payment");
+      postJson(
+        verifyUrl,
+        JSON.stringify({
+          email: email,
+          password: password,
+          payment_id: paymentId,
+        })
+      )
+        .then(function (r) {
+          return r.text().then(function (t) {
+            var d = {};
+            try {
+              d = t ? JSON.parse(t) : {};
+            } catch (e2) {
+              msg("Не удалось разобрать ответ сервера проверки оплаты.", "error");
+              return;
+            }
+            if (!r.ok) {
+              msg(
+                d.description || d.error || "Ошибка " + r.status,
+                "error"
+              );
+              cleanReturnUrlParams();
+              return;
+            }
+            if (d.verified) {
+              try {
+                sessionStorage.removeItem(PAYMENT_ID_KEY);
+              } catch (e3) {}
+              msg(
+                d.description ||
+                  "Вы активировали VIP. Полный доступ включён.",
+                "success"
+              );
+              if (pageUrl.searchParams.get("open_app") === "1") {
+                window.location.href = "lisanalarab://vip-paid";
+              }
+              cleanReturnUrlParams();
+              return;
+            }
+            msg(
+              d.description ||
+                "Оплата в YooKassa ещё не подтверждена или отменена.",
+              d.payment_status === "pending" || d.payment_status === "waiting_for_capture"
+                ? "neutral"
+                : "error"
+            );
+            cleanReturnUrlParams();
+          });
+        })
+        .catch(function () {
+          msg(
+            "Не удалось связаться с сервером для проверки оплаты. Попробуйте обновить страницу.",
+            "error"
+          );
+        });
     } catch (e) {}
   }
 
@@ -174,6 +258,11 @@
             d.confirmation_url ||
             (d.confirmation && d.confirmation.confirmation_url);
           if (confirmationUrl) {
+            if (d.yookassa_payment_id) {
+              try {
+                sessionStorage.setItem(PAYMENT_ID_KEY, String(d.yookassa_payment_id));
+              } catch (e) {}
+            }
             saveFormToStorage();
             window.location.href = confirmationUrl;
             return;
