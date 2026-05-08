@@ -571,6 +571,10 @@ body {
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(212, 175, 55, 0.12) inset;
 }
 
+.vip-payment-banner[hidden] {
+  display: none !important;
+}
+
 .vip-payment-banner__check {
   flex-shrink: 0;
   width: 2.5rem;

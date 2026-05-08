@@ -41,6 +41,11 @@
     }
   }
 
+  function hideVipPaymentBanner() {
+    var banner = document.getElementById("vip-payment-banner");
+    if (banner) banner.hidden = true;
+  }
+
   function cleanReturnUrlParams() {
     try {
       var u = new URL(window.location.href);
@@ -57,7 +62,10 @@
   function handleReturnFromPayment() {
     try {
       var pageUrl = new URL(window.location.href);
-      if (pageUrl.searchParams.get("vip_return") !== "1") return;
+      if (pageUrl.searchParams.get("vip_return") !== "1") {
+        hideVipPaymentBanner();
+        return;
+      }
 
       var paymentId = "";
       try {
@@ -167,6 +175,7 @@
   }
 
   restoreFormFromStorage();
+  hideVipPaymentBanner();
   handleReturnFromPayment();
 
   function fnUrl() {
