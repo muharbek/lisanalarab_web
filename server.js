@@ -36,6 +36,7 @@ app.get("/", (_req, res) => {
     verifyPayment: "POST /verify-vip-payment",
     vipStatus: "GET /vip-status",
     claimPendingVIP: "POST /claim-pending-vip",
+    deleteAccountCloud: "POST /delete-account-cloud",
     yookassaWebhook: "POST /yookassa-webhook",
   });
 });
@@ -95,6 +96,7 @@ function ensureAdmin() {
 async function grantVipByEmail(email, paymentId) {
   ensureAdmin();
   const db = admin.firestore();
+  await clearEmailPurchaseRevocation(db, email);
   const user = await admin.auth().getUserByEmail(email);
   const uid = user.uid;
   const batch = db.batch();
@@ -129,6 +131,30 @@ function pendingDocId(email) {
     .toString("base64")
     .replace(/\//g, "_")
     .replace(/\+/g, "-");
+}
+
+const VIP_PURCHASE_REVOKED_COLL = "vip_purchase_revoked_by_email";
+
+async function isEmailPurchaseHistoryRevoked(db, email) {
+  const snap = await db.collection(VIP_PURCHASE_REVOKED_COLL).doc(pendingDocId(email)).get();
+  return snap.exists;
+}
+
+async function revokeEmailPurchaseHistory(db, email, uid) {
+  const pid = pendingDocId(email);
+  await db.collection(VIP_PURCHASE_REVOKED_COLL).doc(pid).set({
+    email,
+    revoked_uid: uid || null,
+    revoked_at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+async function clearEmailPurchaseRevocation(db, email) {
+  try {
+    await db.collection(VIP_PURCHASE_REVOKED_COLL).doc(pendingDocId(email)).delete();
+  } catch (e) {
+    console.error("clear revocation:", e);
+  }
 }
 
 function clientIpFromReq(req) {
@@ -524,6 +550,7 @@ app.post("/yookassa-webhook", async (req, res) => {
 
     ensureAdmin();
     const db = admin.firestore();
+    await clearEmailPurchaseRevocation(db, email);
     const processedRef = db.collection("yookassa_processed_payments").doc(paymentId);
     const already = await processedRef.get();
     if (already.exists) {
@@ -579,6 +606,7 @@ app.post("/yookassa-webhook", async (req, res) => {
 
 app.options("/vip-status", (_req, res) => res.sendStatus(204));
 app.options("/claim-pending-vip", (_req, res) => res.sendStatus(204));
+app.options("/delete-account-cloud", (_req, res) => res.sendStatus(204));
 
 function isValidEmail(email) {
   if (!email || email.length > 254) return false;
@@ -591,6 +619,7 @@ function readVipFromUserData(data) {
 }
 
 async function emailHasSuccessfulPayment(db, email) {
+  if (await isEmailPurchaseHistoryRevoked(db, email)) return false;
   const pending = await db
     .collection("vip_pending_by_email")
     .doc(pendingDocId(email))
@@ -612,6 +641,9 @@ async function getVipStatusForEmail(rawEmail) {
   ensureAdmin();
   const db = admin.firestore();
   const pid = pendingDocId(email);
+  if (await isEmailPurchaseHistoryRevoked(db, email)) {
+    return { status: "none", email };
+  }
   const pendingSnap = await db.collection("vip_pending_by_email").doc(pid).get();
   try {
     const user = await admin.auth().getUserByEmail(email);
@@ -639,6 +671,9 @@ async function claimPendingVIPForAuthenticatedUser(uid, rawEmail) {
   }
   ensureAdmin();
   const db = admin.firestore();
+  if (await isEmailPurchaseHistoryRevoked(db, email)) {
+    return { granted: false, reason: "purchase_history_revoked" };
+  }
   const userSnap = await db.collection("users").doc(uid).get();
   if (readVipFromUserData(userSnap.data())) {
     return { granted: true, reason: "already_vip" };
@@ -666,6 +701,55 @@ async function claimPendingVIPForAuthenticatedUser(uid, rawEmail) {
     granted: true,
     reason: pendingSnap.exists ? "claimed_pending" : "restored_from_payment",
   };
+}
+
+async function deleteAccountCloudData(uid, rawEmail) {
+  ensureAdmin();
+  const db = admin.firestore();
+  const email = normalizeEmail(rawEmail);
+
+  if (email && isValidEmail(email)) {
+    await revokeEmailPurchaseHistory(db, email, uid);
+  }
+
+  try {
+    await db.collection("users").doc(uid).delete();
+  } catch (e) {
+    console.error("delete users doc:", e);
+  }
+
+  if (!email || !isValidEmail(email)) {
+    return { ok: true, uid, email: "", revoked: false };
+  }
+
+  const pid = pendingDocId(email);
+  const refs = [
+    db.collection("vip_pending_by_email").doc(pid),
+    db.collection("vip_paid_by_email").doc(pid),
+  ];
+  for (const ref of refs) {
+    try {
+      await ref.delete();
+    } catch (e) {
+      console.error("delete vip ref:", ref.path, e);
+    }
+  }
+
+  try {
+    const payments = await db
+      .collection("yookassa_processed_payments")
+      .where("email", "==", email)
+      .get();
+    if (!payments.empty) {
+      const batch = db.batch();
+      payments.docs.forEach((doc) => batch.delete(doc.ref));
+      await batch.commit();
+    }
+  } catch (e) {
+    console.error("delete payment records:", e);
+  }
+
+  return { ok: true, uid, email, revoked: true };
 }
 
 app.get("/vip-status", async (req, res) => {
@@ -703,6 +787,27 @@ app.post("/claim-pending-vip", async (req, res) => {
   } catch (error) {
     console.error("claim-pending-vip:", error);
     return res.status(401).json({ granted: false, reason: "auth_failed" });
+  }
+});
+
+app.post("/delete-account-cloud", async (req, res) => {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!token) {
+    return res.status(401).json({ ok: false, reason: "no_token" });
+  }
+  try {
+    ensureAdmin();
+    const decoded = await admin.auth().verifyIdToken(token);
+    const uid = decoded.uid;
+    const email =
+      normalizeEmail(decoded.email) ||
+      normalizeEmail(req.body && req.body.email);
+    const result = await deleteAccountCloudData(uid, email);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("delete-account-cloud:", error);
+    return res.status(401).json({ ok: false, reason: "auth_failed" });
   }
 });
 
