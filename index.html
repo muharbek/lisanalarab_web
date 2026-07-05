@@ -3,9 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="lisan-create-payment-url" content="https://lisanalarab-backend-5lbb.onrender.com/create-payment" />
   <meta name="theme-color" content="#0A0E1A" />
+  <meta
+    name="lisan-create-payment-url"
+    content="https://lisanalarab-backend-5lbb.onrender.com/create-payment"
+  />
+  <meta
+    name="lisan-vip-status-url"
+    content="https://lisanalarab-backend-5lbb.onrender.com/vip-status"
+  />
   <meta name="description" content="«Лисан аль-Араб»: полный доступ ко всем блокам, в том числе к «Истории», неограниченное время обучения и работа без рекламы." />
+  <meta name="lisan-site-revision" content="20260705-pay-first" />
   <title>Лисан аль-Араб · Полный доступ</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -21,6 +29,12 @@
     <p class="lede">
       Активируйте полный доступ к материалам курса — в спокойной обстановке, удобной для регулярных занятий арабским языком.
     </p>
+    <aside class="network-notice network-notice--masthead" role="note" aria-label="Рекомендации по интернету">
+      <p class="network-notice__title">Лучший способ оплаты и входа</p>
+      <p class="network-notice__text">
+        Подключитесь к Wi‑Fi и отключите VPN — так оплата, вход в приложение и обновление VIP проходят надёжнее всего.
+      </p>
+    </aside>
   </header>
 
   <div class="islamic-divider" aria-hidden="true">
@@ -71,46 +85,21 @@
       </svg>
     </div>
 
-    <section class="benefits benefits--raised" aria-labelledby="benefits-heading">
-      <h2 id="benefits-heading" class="section-title">Зачем активировать полный доступ</h2>
-
-      <article class="benefit-card">
-        <h3 class="benefit-title">Откройте полный доступ ко всем блокам, в&nbsp;частности к «Истории»</h3>
-        <p class="benefit-body">
-          Открывайте рассказы и связанные задания целиком — без обрезанного доступа к текстам и упражнениям в блоке «Истории».
-        </p>
-      </article>
-
-      <article class="benefit-card">
-        <h3 class="benefit-title">Полный свободный доступ без пауз</h3>
-        <p class="benefit-body">
-          Без VIP в приложении действует режим 10 минут занятий и пауза, а с VIP вы учитесь непрерывно и в удобном для себя темпе.
-        </p>
-      </article>
-
-      <article class="benefit-card">
-        <h3 class="benefit-title">Сильная программа обучения и выгодная цена</h3>
-        <p class="benefit-body">
-          В основе приложения — продуманная и качественная программа обучения арабскому языку, а VIP за 150 рублей позволяет использовать её полностью и без ограничений.
-        </p>
-      </article>
-    </section>
-
     <section class="access-panel access-panel--raised" aria-labelledby="access-heading">
       <div class="panel-inner activation-card">
-        <div id="vip-payment-banner" class="vip-payment-banner" hidden role="status" aria-live="polite">
-          <div class="vip-payment-banner__check" aria-hidden="true">✓</div>
-          <div class="vip-payment-banner__body">
-            <p class="vip-payment-banner__headline">Оплата подтверждена</p>
-            <p id="vip-payment-banner__message" class="vip-payment-banner__message">
-              Вы активировали VIP — полный доступ включён для этого аккаунта.
-            </p>
+        <h2 id="access-heading" class="panel-title">Оплата полного доступа</h2>
+
+        <div class="panel-tariff" role="region" aria-labelledby="panel-tariff-heading">
+          <h3 id="panel-tariff-heading" class="panel-tariff__title">Оплата подписки</h3>
+          <p class="panel-tariff__plan">Полный доступ к курсу</p>
+          <p class="panel-tariff__summary">Общая стоимость — 150 рублей.</p>
+          <div class="yookassa-payment-form">
+            <p id="checkout-message" class="form-message checkout-message" role="status" aria-live="polite"></p>
+            <button type="button" id="activate-vip" class="btn-yookassa-pay">
+              Оплатить (150₽)
+            </button>
           </div>
         </div>
-        <h2 id="access-heading" class="panel-title">Активировать полный доступ</h2>
-        <p class="panel-note">
-          Укажите ту же почту и пароль, что в приложении «Лисан аль-Араб», затем нажмите «Активировать подписку» — откроется оплата YooKassa (сессия создаётся через API на сервере Render).
-        </p>
 
         <div class="auth-form auth-form--before-pay" id="pay-credentials">
           <label class="field">
@@ -140,18 +129,54 @@
           </label>
         </div>
 
-        <div class="panel-tariff" role="region" aria-labelledby="panel-tariff-heading">
-          <h3 id="panel-tariff-heading" class="panel-tariff__title">Оплата подписки</h3>
-          <p class="panel-tariff__plan">Полный доступ к курсу</p>
-          <p class="panel-tariff__summary">Общая стоимость — 150 рублей.</p>
-          <div class="yookassa-payment-form">
-            <p id="checkout-message" class="form-message checkout-message" role="status" aria-live="polite"></p>
-            <button type="button" id="activate-vip" class="btn-yookassa-pay">
-              Активировать подписку (150₽)
-            </button>
+        <aside class="network-notice" role="note" aria-label="Рекомендации по интернету">
+          <p class="network-notice__title">Перед оплатой</p>
+          <p class="network-notice__text">
+            Лучший способ — Wi‑Fi без VPN. VPN и слабый мобильный интернет часто мешают оплате и передаче VIP в приложение.
+          </p>
+        </aside>
+
+        <section
+          id="payment-success-panel"
+          class="payment-success-panel"
+          hidden
+          aria-labelledby="payment-success-heading"
+        >
+          <div class="payment-success-panel__badge" aria-hidden="true">✓</div>
+          <h3 id="payment-success-heading" class="payment-success-panel__title">Оплата прошла успешно</h3>
+          <p id="payment-success-body" class="payment-success-panel__body"></p>
+          <p id="payment-success-status" class="payment-success-panel__status" role="status" aria-live="polite"></p>
+          <div class="payment-success-panel__actions">
+            <a href="lisanalarab://vip-return" class="btn-open-app">Открыть приложение</a>
+            <button type="button" id="recheck-vip-status" class="btn-recheck-vip">Проверить подписку</button>
           </div>
-        </div>
+        </section>
       </div>
+    </section>
+
+    <section class="benefits benefits--raised" aria-labelledby="benefits-heading">
+      <h2 id="benefits-heading" class="section-title">Зачем активировать полный доступ</h2>
+
+      <article class="benefit-card">
+        <h3 class="benefit-title">Откройте полный доступ ко всем блокам, в&nbsp;частности к «Истории»</h3>
+        <p class="benefit-body">
+          Открывайте рассказы и связанные задания целиком — без обрезанного доступа к текстам и упражнениям в блоке «Истории».
+        </p>
+      </article>
+
+      <article class="benefit-card">
+        <h3 class="benefit-title">Неограниченное время обучения <span class="benefit-tag">(без лимитов)</span></h3>
+        <p class="benefit-body">
+          Учитесь столько, сколько нужно именно вам: возвращайтесь к урокам и повторяйте материал без искусственных ограничений по времени.
+        </p>
+      </article>
+
+      <article class="benefit-card">
+        <h3 class="benefit-title">Фокус без рекламы</h3>
+        <p class="benefit-body">
+          Никакой рекламы на экране — только учебный интерфейс, чтобы полностью сосредоточиться на языке и практике.
+        </p>
+      </article>
     </section>
   </main>
 
