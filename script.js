@@ -260,8 +260,21 @@
   }
 
   function confirmBeforePay() {
-    return window.confirm(
-      "Перед оплатой лучше всего подключиться к Wi‑Fi и отключить VPN.\n\nПродолжить к оплате?"
+    return true;
+  }
+
+  function paymentErrorMessage(d, status) {
+    if (d && d.error === "invalid_credentials") {
+      return "Неверная почта или пароль. Скопируйте их из вкладки «Аккаунт» в приложении.";
+    }
+    if (d && d.error === "invalid_body") {
+      return "Укажите почту и пароль — те же, что в приложении.";
+    }
+    return (
+      (d && d.description) ||
+      (d && d.details && d.details.description) ||
+      (d && d.error) ||
+      "Ошибка " + status
     );
   }
 
@@ -285,6 +298,12 @@
       return;
     }
 
+    var password = passEl ? String(passEl.value || "") : "";
+    if (!password) {
+      msg("Введите пароль из приложения (вкладка «Аккаунт»).", "error");
+      return;
+    }
+
     if (!confirmBeforePay()) {
       msg("Оплата отменена. Подключитесь к Wi‑Fi без VPN и попробуйте снова.", "neutral");
       return;
@@ -294,7 +313,7 @@
     msg("Создаём платёж для " + email + "…", "neutral");
 
     var url = fnUrl();
-    var payload = JSON.stringify({ email: email });
+    var payload = JSON.stringify({ email: email, password: password });
     postJson(url, payload)
       .then(function (r) {
         return r.text().then(function (t) {
@@ -310,13 +329,7 @@
             return;
           }
           if (!r.ok) {
-            msg(
-              d.description ||
-                (d.details && d.details.description) ||
-                d.error ||
-                "Ошибка " + r.status,
-              "error"
-            );
+            msg(paymentErrorMessage(d, r.status), "error");
             b.disabled = false;
             return;
           }
