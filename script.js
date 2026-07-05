@@ -1,25 +1,16 @@
 (function () {
   var STORAGE_KEY = "lisan_web_pay_form";
-
+  var PAYMENT_ID_KEY = "lisan_pending_payment_id";
   var DEFAULT_CREATE_PAYMENT_URL =
     "https://lisanalarab-backend-5lbb.onrender.com/create-payment";
-  var DEFAULT_VIP_STATUS_URL =
-    "https://lisanalarab-backend-5lbb.onrender.com/vip-status";
 
   var b = document.getElementById("activate-vip");
   var m = document.getElementById("checkout-message");
   var emailEl = document.getElementById("pay-email");
   var passEl = document.getElementById("pay-password");
-  var successPanel = document.getElementById("payment-success-panel");
-  var successBody = document.getElementById("payment-success-body");
-  var successStatus = document.getElementById("payment-success-status");
-  var recheckBtn = document.getElementById("recheck-vip-status");
   if (!b) return;
 
-  var pollTimer = null;
-  var pollAttempts = 0;
-  var MAX_POLL_ATTEMPTS = 45;
-
+  /** Как на сервере: trim + toLowerCase — совпадает с Firebase Auth. */
   function normalizeClientEmail(raw) {
     if (raw == null || raw === "") return "";
     return String(raw).trim().toLowerCase();
@@ -35,162 +26,133 @@
     m.textContent = t || "";
     if (tone) m.dataset.tone = tone;
     else delete m.dataset.tone;
+    if (tone !== "success") delete m.dataset.celebrate;
   }
 
-  function fnUrl() {
-    var meta = document.querySelector('meta[name="lisan-create-payment-url"]');
-    var fromMeta = meta && meta.getAttribute("content");
-    if (fromMeta && String(fromMeta).trim()) return String(fromMeta).trim();
-    if (
-      typeof window.LISAN_CREATE_PAYMENT_URL === "string" &&
-      window.LISAN_CREATE_PAYMENT_URL.trim()
-    )
-      return window.LISAN_CREATE_PAYMENT_URL.trim();
-    return DEFAULT_CREATE_PAYMENT_URL;
-  }
-
-  function vipStatusUrl() {
-    var meta = document.querySelector('meta[name="lisan-vip-status-url"]');
-    var fromMeta = meta && meta.getAttribute("content");
-    if (fromMeta && String(fromMeta).trim()) return String(fromMeta).trim();
-    return DEFAULT_VIP_STATUS_URL;
-  }
-
-  function showSuccessPanel(email) {
-    if (!successPanel) return;
-    successPanel.hidden = false;
-  }
-
-  function setSuccessStatus(text, tone) {
-    if (!successStatus) return;
-    successStatus.textContent = text || "";
-    if (tone) successStatus.dataset.tone = tone;
-    else delete successStatus.dataset.tone;
-  }
-
-  function successBodyForEmail(email) {
-    if (email && isOkEmail(email)) {
-      return (
-        "Полный доступ (VIP) привязан к почте " +
-        email +
-        ". Войдите в приложение «Лисан аль‑Араб» с этой же почтой — подписка обновится автоматически."
-      );
-    }
-    return (
-      "Войдите в приложение «Лисан аль‑Араб» с той же почтой, что указывали при оплате — полный доступ обновится автоматически."
-    );
-  }
-
-  function applyVipStatusResult(data, email) {
-    var status = data && data.status;
-    if (status === "active") {
-      setSuccessStatus(
-        "Всё оплачено. VIP активен — откройте приложение с этой почтой.",
-        "success"
-      );
-      msg("", null);
-      stopPolling();
-      return true;
-    }
-    if (status === "pending" || status === "paid_pending_account") {
-      setSuccessStatus(
-        "Оплата принята. Если в приложении VIP ещё не виден — войдите в аккаунт и нажмите «Проверить подписку» (лучше на Wi‑Fi без VPN).",
-        "neutral"
-      );
-      return false;
-    }
-    setSuccessStatus(
-      "Проверяем статус оплаты… Лучше оставаться на Wi‑Fi без VPN.",
-      "neutral"
-    );
-    return false;
-  }
-
-  function stopPolling() {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
+  function showVipPaymentBanner(messageText) {
+    var banner = document.getElementById("vip-payment-banner");
+    var msgEl = document.getElementById("vip-payment-banner__message");
+    if (msgEl && messageText) msgEl.textContent = messageText;
+    if (banner) {
+      banner.hidden = false;
+      try {
+        banner.scrollIntoView({ behavior: "smooth", block: "center" });
+      } catch (e) {}
     }
   }
 
-  function fetchVipStatus(email) {
-    var url =
-      vipStatusUrl() +
-      "?email=" +
-      encodeURIComponent(normalizeClientEmail(email));
-    return fetch(url, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      credentials: "omit",
-      cache: "no-store",
-      mode: "cors",
-    }).then(function (r) {
-      return r.json().catch(function () {
-        return { status: "error" };
-      });
-    });
+  function hideVipPaymentBanner() {
+    var banner = document.getElementById("vip-payment-banner");
+    if (banner) banner.hidden = true;
   }
 
-  function pollVipStatus(email) {
-    stopPolling();
-    pollAttempts = 0;
-    pollTimer = setInterval(function () {
-      pollAttempts += 1;
-      if (pollAttempts > MAX_POLL_ATTEMPTS) {
-        stopPolling();
-        setSuccessStatus(
-          "Оплата прошла. Если VIP ещё не виден — войдите в приложение и нажмите «Проверить подписку» (Wi‑Fi, без VPN).",
-          "neutral"
-        );
-        return;
-      }
-      fetchVipStatus(email).then(function (data) {
-        applyVipStatusResult(data, email);
-      });
-    }, 2000);
-    fetchVipStatus(email).then(function (data) {
-      applyVipStatusResult(data, email);
-    });
-  }
-
-  function handleReturnFromPayment() {
+  function cleanReturnUrlParams() {
     try {
       var u = new URL(window.location.href);
-      if (u.searchParams.get("vip_return") !== "1") return;
-      var em = normalizeClientEmail(emailEl && emailEl.value);
-      if (successBody) successBody.textContent = successBodyForEmail(em);
-      showSuccessPanel(em);
-      setSuccessStatus("Проверяем подписку…", "neutral");
-      msg("", null);
-      if (em && isOkEmail(em)) pollVipStatus(em);
-      else {
-        setSuccessStatus(
-          "Введите почту из оплаты выше и нажмите «Проверить подписку».",
-          "neutral"
-        );
-      }
       u.searchParams.delete("vip_return");
+      u.searchParams.delete("open_app");
       var qs = u.searchParams.toString();
       window.history.replaceState({}, "", u.pathname + (qs ? "?" + qs : "") + u.hash);
     } catch (e) {}
   }
 
-  function emailFromPageURL() {
+  /**
+   * Only show VIP success after server confirms YooKassa payment status (succeeded).
+   */
+  function handleReturnFromPayment() {
     try {
-      var u = new URL(window.location.href);
-      var em = normalizeClientEmail(u.searchParams.get("email"));
-      return isOkEmail(em) ? em : "";
-    } catch (e) {
-      return "";
-    }
+      var pageUrl = new URL(window.location.href);
+      if (pageUrl.searchParams.get("vip_return") !== "1") {
+        hideVipPaymentBanner();
+        return;
+      }
+
+      var paymentId = "";
+      try {
+        paymentId = sessionStorage.getItem(PAYMENT_ID_KEY) || "";
+      } catch (e) {}
+
+      var email = normalizeClientEmail(emailEl && emailEl.value);
+      var password = (passEl && passEl.value) || "";
+
+      if (!paymentId) {
+        msg(
+          "Не удалось проверить оплату автоматически. Если вы оплатили, войдите в приложение «Лисан аль‑Араб» с той же почтой — VIP обновится.",
+          "error"
+        );
+        cleanReturnUrlParams();
+        return;
+      }
+
+      if (!email || !password) {
+        msg(
+          "Чтобы подтвердить VIP, введите ту же почту и пароль, что перед оплатой, и обновите страницу.",
+          "error"
+        );
+        return;
+      }
+
+      msg("Проверяем оплату в YooKassa…", "neutral");
+
+      var verifyUrl = fnUrl().replace(/\/?create-payment\/?$/i, "/verify-vip-payment");
+      postJson(
+        verifyUrl,
+        JSON.stringify({
+          email: email,
+          password: password,
+          payment_id: paymentId,
+        })
+      )
+        .then(function (r) {
+          return r.text().then(function (t) {
+            var d = {};
+            try {
+              d = t ? JSON.parse(t) : {};
+            } catch (e2) {
+              msg("Не удалось разобрать ответ сервера проверки оплаты.", "error");
+              return;
+            }
+            if (!r.ok) {
+              msg(
+                d.description || d.error || "Ошибка " + r.status,
+                "error"
+              );
+              cleanReturnUrlParams();
+              return;
+            }
+            if (d.verified) {
+              try {
+                sessionStorage.removeItem(PAYMENT_ID_KEY);
+              } catch (e3) {}
+              var successCopy =
+                d.description ||
+                "Вы активировали VIP. Полный доступ уже записан в ваш аккаунт — откройте приложение с этой же почтой.";
+              showVipPaymentBanner(successCopy);
+              msg("VIP активирован — полный доступ для этого аккаунта.", "success");
+              if (m) m.dataset.celebrate = "1";
+              cleanReturnUrlParams();
+              return;
+            }
+            msg(
+              d.description ||
+                "Оплата в YooKassa ещё не подтверждена или отменена.",
+              d.payment_status === "pending" || d.payment_status === "waiting_for_capture"
+                ? "neutral"
+                : "error"
+            );
+            cleanReturnUrlParams();
+          });
+        })
+        .catch(function () {
+          msg(
+            "Не удалось связаться с сервером для проверки оплаты. Попробуйте обновить страницу.",
+            "error"
+          );
+        });
+    } catch (e) {}
   }
 
   function restoreFormFromStorage() {
-    var fromUrl = emailFromPageURL();
-    if (fromUrl && emailEl) {
-      emailEl.value = fromUrl;
-      return;
-    }
     try {
       var raw = sessionStorage.getItem(STORAGE_KEY);
       if (!raw) return;
@@ -213,20 +175,19 @@
   }
 
   restoreFormFromStorage();
+  hideVipPaymentBanner();
   handleReturnFromPayment();
 
-  if (recheckBtn) {
-    recheckBtn.addEventListener("click", function () {
-      var email = normalizeClientEmail(emailEl && emailEl.value);
-      if (!email || !isOkEmail(email)) {
-        setSuccessStatus("Сначала введите почту, которую указывали при оплате.", "error");
-        return;
+  function fnUrl() {
+    try {
+      var el = document.querySelector('meta[name="lisan-create-payment-url"]');
+      var c = el && el.getAttribute("content");
+      if (c) {
+        var s = String(c).trim();
+        if (s) return s;
       }
-      showSuccessPanel(email);
-      if (successBody) successBody.textContent = successBodyForEmail(email);
-      setSuccessStatus("Проверяем…", "neutral");
-      pollVipStatus(email);
-    });
+    } catch (e) {}
+    return DEFAULT_CREATE_PAYMENT_URL;
   }
 
   function postJson(url, bodyStr) {
@@ -237,37 +198,12 @@
       credentials: "omit",
       cache: "no-store",
       mode: "cors",
-    }).catch(function () {
-      return new Promise(function (resolve, reject) {
-        var xhr = new XMLHttpRequest();
-        xhr.open("POST", url);
-        xhr.setRequestHeader("Content-Type", "application/json");
-        xhr.onload = function () {
-          resolve({
-            ok: xhr.status >= 200 && xhr.status < 300,
-            status: xhr.status,
-            text: function () {
-              return Promise.resolve(xhr.responseText || "");
-            },
-          });
-        };
-        xhr.onerror = function () {
-          reject(new Error("XHR"));
-        };
-        xhr.send(bodyStr);
-      });
     });
-  }
-
-  function confirmBeforePay() {
-    return window.confirm(
-      "Перед оплатой лучше всего подключиться к Wi‑Fi и отключить VPN.\n\nПродолжить к оплате?"
-    );
   }
 
   b.addEventListener("click", function () {
     if (location.protocol === "file:") {
-      msg("Откройте сайт по HTTPS на Render (деплой статики), не файл с диска.", "error");
+      msg("Откройте сайт по HTTPS (не файл с диска).", "error");
       return;
     }
     if (!location.origin || location.origin === "null") {
@@ -285,8 +221,9 @@
       return;
     }
 
-    if (!confirmBeforePay()) {
-      msg("Оплата отменена. Подключитесь к Wi‑Fi без VPN и попробуйте снова.", "neutral");
+    var password = (passEl && passEl.value) || "";
+    if (!password) {
+      msg("Введите пароль из приложения.", "error");
       return;
     }
 
@@ -294,16 +231,27 @@
     msg("Создаём платёж для " + email + "…", "neutral");
 
     var url = fnUrl();
-    var payload = JSON.stringify({ email: email });
+    var payload = JSON.stringify({ email: email, password: password });
     postJson(url, payload)
       .then(function (r) {
         return r.text().then(function (t) {
+          var raw = (t || "").trim();
           var d = {};
+
+          if (r.status === 404 || /^not\s*found$/i.test(raw)) {
+            msg(
+              "Платёжный сервер не найден по этому адресу (404): Web Service на Render не запущен, удалён или URL в мета-теге не совпадает с сервисом. Откройте Render → ваш сервис → скопируйте точный URL и обновите lisan-create-payment-url.",
+              "error"
+            );
+            b.disabled = false;
+            return;
+          }
+
           try {
-            d = t ? JSON.parse(t) : {};
+            d = raw ? JSON.parse(raw) : {};
           } catch (e) {
             msg(
-              "Сервер не вернул JSON. Проверьте адрес API и что сервис на Render запущен.",
+              "Ответ сервера не JSON — проверьте деплой API и путь /create-payment.",
               "error"
             );
             b.disabled = false;
@@ -321,27 +269,36 @@
             return;
           }
           if (d.customer_email && normalizeClientEmail(d.customer_email) !== email) {
-            msg("Внутренняя ошибка: почта в ответе не совпадает. Обновите страницу.", "error");
+            msg("Внутренняя ошибка: почта в ответе не совпадает. Обновите страницу и попробуйте снова.", "error");
             b.disabled = false;
             return;
           }
-          var pay =
-            (d.confirmation && d.confirmation.confirmation_url) || d.confirmation_url;
-          if (pay) {
+          // Backend returns confirmation_url from YooKassa; redirect user to the hosted payment page.
+          var confirmationUrl =
+            d.confirmation_url ||
+            (d.confirmation && d.confirmation.confirmation_url);
+          if (confirmationUrl) {
+            if (d.yookassa_payment_id) {
+              try {
+                sessionStorage.setItem(PAYMENT_ID_KEY, String(d.yookassa_payment_id));
+              } catch (e) {}
+            }
             saveFormToStorage();
-            window.location.href = pay;
+            window.location.href = confirmationUrl;
             return;
           }
-          msg(
-            "Нет ссылки на оплату. Попробуйте позже или напишите в поддержку.",
-            "error"
-          );
+          msg("Нет ссылки на оплату в ответе.", "error");
           b.disabled = false;
         });
       })
       .catch(function () {
         msg(
-          "Не удалось отправить запрос. Подключитесь к Wi‑Fi, отключите VPN и попробуйте снова.",
+          "Запрос к «" +
+            url +
+            "» не выполнился (нет ответа, CORS или сервис спит). " +
+            "На Render должен быть именно Web Service с командой npm start из корня этого репозитория; в Environment нужны YOOKASSA_SECRET_KEY и FIREBASE_WEB_API_KEY (PUBLIC_ORIGIN по умолчанию уже задан в коде бэкенда). " +
+            "Откройте в браузере базовый URL сервиса (без /create-payment) — если не открывается JSON с ok:true, мета-тег lisan-create-payment-url указывает не на тот сервис. " +
+            "На бесплатном тарифе первый запрос после простоя может занять 1–2 минуты — подождите и нажмите снова.",
           "error"
         );
         b.disabled = false;
