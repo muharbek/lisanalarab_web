@@ -457,6 +457,24 @@ body {
   transform: translateY(-1px);
 }
 
+.btn-open-app--in-app {
+  font-size: 1.05rem;
+  font-weight: 700;
+  min-height: 52px;
+  box-shadow: 0 8px 28px rgba(212, 175, 55, 0.45);
+  animation: in-app-return-pulse 2s ease-in-out infinite;
+}
+
+@keyframes in-app-return-pulse {
+  0%,
+  100% {
+    box-shadow: 0 8px 28px rgba(212, 175, 55, 0.45);
+  }
+  50% {
+    box-shadow: 0 10px 36px rgba(212, 175, 55, 0.65);
+  }
+}
+
 .network-notice__title {
   margin: 0 0 0.35rem;
   font-size: 0.78rem;

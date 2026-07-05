@@ -1,5 +1,6 @@
 (function () {
   var STORAGE_KEY = "lisan_web_pay_form";
+  var PAYMENT_ID_KEY = "lisan_last_payment_id";
 
   var DEFAULT_CREATE_PAYMENT_URL =
     "https://lisanalarab-backend-5lbb.onrender.com/create-payment";
@@ -56,9 +57,95 @@
     return DEFAULT_VIP_STATUS_URL;
   }
 
+  function verifyPaymentUrl() {
+    return fnUrl().replace("/create-payment", "/verify-vip-payment");
+  }
+
+  function readStoredPassword() {
+    try {
+      if (passEl && passEl.value) return String(passEl.value || "");
+      var raw = sessionStorage.getItem(STORAGE_KEY);
+      if (!raw) return "";
+      var o = JSON.parse(raw);
+      return typeof o.password === "string" ? o.password : "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function readStoredPaymentId() {
+    try {
+      return sessionStorage.getItem(PAYMENT_ID_KEY) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function storePaymentId(id) {
+    try {
+      if (id) sessionStorage.setItem(PAYMENT_ID_KEY, String(id));
+    } catch (e) {}
+  }
+
+  function verifyLastPayment(email, password) {
+    var paymentId = readStoredPaymentId();
+    if (!paymentId || !email || !password) {
+      return Promise.resolve(null);
+    }
+    return postJson(
+      verifyPaymentUrl(),
+      JSON.stringify({
+        email: email,
+        password: password,
+        payment_id: paymentId,
+      })
+    ).then(function (r) {
+      return r.text().then(function (t) {
+        try {
+          return t ? JSON.parse(t) : {};
+        } catch (e) {
+          return {};
+        }
+      });
+    });
+  }
+
+  function updateReturnToAppLink() {
+    var btn = document.querySelector(".btn-open-app");
+    if (!btn) return;
+    var paymentId = readStoredPaymentId();
+    var href = "lisanalarab://vip-return";
+    if (paymentId) {
+      href += "?payment_id=" + encodeURIComponent(paymentId);
+    }
+    btn.setAttribute("href", href);
+  }
+
+  function isInAppCheckout() {
+    try {
+      return new URL(window.location.href).searchParams.get("source") === "app";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function updateSuccessActionsForContext() {
+    var btn = document.querySelector(".btn-open-app");
+    if (!btn) return;
+    if (isInAppCheckout()) {
+      btn.textContent = "Вернитесь в приложение";
+      btn.classList.add("btn-open-app--in-app");
+    } else {
+      btn.textContent = "Открыть приложение";
+      btn.classList.remove("btn-open-app--in-app");
+    }
+    updateReturnToAppLink();
+  }
+
   function showSuccessPanel(email) {
     if (!successPanel) return;
     successPanel.hidden = false;
+    updateSuccessActionsForContext();
     var card = document.querySelector(".activation-card");
     if (card) card.classList.add("activation-card--paid");
     var formBlock = document.getElementById("checkout-form-block");
@@ -76,6 +163,9 @@
   }
 
   function successBodyForEmail(email) {
+    if (isInAppCheckout()) {
+      return "Всё оплачено. Нажмите «Вернитесь в приложение» — полный доступ включится автоматически.";
+    }
     if (email && isOkEmail(email)) {
       return (
         "Полный доступ (VIP) привязан к почте " +
@@ -92,16 +182,22 @@
     var status = data && data.status;
     if (status === "active") {
       setSuccessStatus(
-        "VIP активен. Откройте приложение — полный доступ включится автоматически.",
+        isInAppCheckout()
+          ? "Всё оплачено — вернитесь в приложение."
+          : "VIP активен. Откройте приложение — полный доступ включится автоматически.",
         "success"
       );
+      if (successBody) successBody.textContent = successBodyForEmail(email);
+      showSuccessPanel(email);
       msg("", null);
       stopPolling();
       return true;
     }
     if (status === "pending" || status === "paid_pending_account") {
       setSuccessStatus(
-        "Оплата принята. Если в приложении VIP ещё не виден — войдите в аккаунт и нажмите «Проверить подписку» (лучше на Wi‑Fi без VPN).",
+        isInAppCheckout()
+          ? "Оплата принята. Нажмите «Вернитесь в приложение»."
+          : "Оплата принята. Если в приложении VIP ещё не виден — войдите в аккаунт и нажмите «Проверить подписку» (лучше на Wi‑Fi без VPN).",
         "neutral"
       );
       return false;
@@ -165,17 +261,38 @@
       var u = new URL(window.location.href);
       if (u.searchParams.get("vip_return") !== "1") return;
       var em = normalizeClientEmail(emailEl && emailEl.value);
-      if (successBody) successBody.textContent = successBodyForEmail(em);
-      showSuccessPanel(em);
-      setSuccessStatus("Проверяем подписку…", "neutral");
+      var pass = readStoredPassword();
       msg("", null);
-      if (em && isOkEmail(em)) pollVipStatus(em);
-      else {
-        setSuccessStatus(
-          "Введите почту из оплаты выше и нажмите «Проверить подписку».",
-          "neutral"
-        );
+      setSuccessStatus("Проверяем оплату в YooKassa…", "neutral");
+
+      function startPolling() {
+        if (em && isOkEmail(em)) {
+          pollVipStatus(em);
+        } else {
+          setSuccessStatus(
+            "Введите почту из оплаты выше и нажмите «Проверить подписку».",
+            "neutral"
+          );
+        }
       }
+
+      if (em && isOkEmail(em) && pass) {
+        verifyLastPayment(em, pass).then(function (v) {
+          if (v && v.verified) {
+            applyVipStatusResult({ status: "active" }, em);
+            return;
+          }
+          if (v && v.description) {
+            setSuccessStatus(v.description, v.verified ? "success" : "neutral");
+          }
+          startPolling();
+        }).catch(function () {
+          startPolling();
+        });
+      } else {
+        startPolling();
+      }
+
       u.searchParams.delete("vip_return");
       var qs = u.searchParams.toString();
       window.history.replaceState({}, "", u.pathname + (qs ? "?" + qs : "") + u.hash);
@@ -320,7 +437,15 @@
     msg("Создаём платёж для " + email + "…", "neutral");
 
     var url = fnUrl();
-    var payload = JSON.stringify({ email: email, password: password });
+    var checkoutSource = "";
+    try {
+      checkoutSource = new URL(window.location.href).searchParams.get("source") || "";
+    } catch (e) {}
+    var payload = JSON.stringify({
+      email: email,
+      password: password,
+      source: checkoutSource,
+    });
     postJson(url, payload)
       .then(function (r) {
         return r.text().then(function (t) {
@@ -349,6 +474,7 @@
             (d.confirmation && d.confirmation.confirmation_url) || d.confirmation_url;
           if (pay) {
             saveFormToStorage();
+            if (d.yookassa_payment_id) storePaymentId(d.yookassa_payment_id);
             window.location.href = pay;
             return;
           }

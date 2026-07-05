@@ -23,6 +23,7 @@ app.use(
 );
 app.options("/create-payment", (_req, res) => res.sendStatus(204));
 app.options("/verify-vip-payment", (_req, res) => res.sendStatus(204));
+app.options("/sync-vip-payment", (_req, res) => res.sendStatus(204));
 app.options("/yookassa-webhook", (_req, res) => res.sendStatus(204));
 
 app.use(express.json());
@@ -34,6 +35,7 @@ app.get("/", (_req, res) => {
     service: "lisanalarab-backend",
     createPayment: "POST /create-payment",
     verifyPayment: "POST /verify-vip-payment",
+    syncVipPayment: "POST /sync-vip-payment",
     vipStatus: "GET /vip-status",
     claimPendingVIP: "POST /claim-pending-vip",
     deleteAccountCloud: "POST /delete-account-cloud",
@@ -124,6 +126,34 @@ async function grantVipByEmail(email, paymentId) {
     );
   }
   await batch.commit();
+}
+
+async function verifyYooKassaPaymentSucceeded(paymentId, expectedEmail) {
+  const authHeader = yooKassaAuthHeader();
+  if (!authHeader) {
+    return { ok: false, reason: "no_secret", status: null };
+  }
+  const { statusCode, raw } = await yooKassaGetPayment(paymentId, authHeader);
+  let payment = {};
+  try {
+    payment = raw ? JSON.parse(raw) : {};
+  } catch {
+    payment = {};
+  }
+  if (statusCode < 200 || statusCode >= 300) {
+    return { ok: false, reason: "yk_get_failed", status: null };
+  }
+  const status = payment.status || "";
+  const metaEmail = normalizeEmail(
+    payment.metadata && payment.metadata.customer_email
+  );
+  if (metaEmail && expectedEmail && metaEmail !== expectedEmail) {
+    return { ok: false, reason: "email_mismatch", status };
+  }
+  if (status !== "succeeded" || payment.paid !== true) {
+    return { ok: false, reason: "not_paid", status };
+  }
+  return { ok: true, status, payment };
 }
 
 function pendingDocId(email) {
@@ -328,8 +358,13 @@ app.post("/create-payment", async (req, res) => {
       });
     }
 
-    // After payment YooKassa returns user to the website.
-    const returnUrl = `${publicOrigin}/?vip_return=1`;
+    // After payment YooKassa returns user to the website (in-app: keep source=app).
+    const checkoutSource =
+      req.body && String(req.body.source || "").trim().toLowerCase();
+    const returnUrl =
+      checkoutSource === "app"
+        ? `${publicOrigin}/?vip_return=1&source=app`
+        : `${publicOrigin}/?vip_return=1`;
     const paymentPayload = {
       amount: { value: "150.00", currency: "RUB" },
       capture: true,
@@ -458,45 +493,118 @@ app.post("/verify-vip-payment", async (req, res) => {
       });
     }
 
-    if (status === "succeeded") {
-      try {
-        await grantVipByEmail(email, paymentId);
+    const verified = await verifyYooKassaPaymentSucceeded(paymentId, email);
+    if (!verified.ok) {
+      if (verified.reason === "not_paid") {
+        if (
+          verified.status === "pending" ||
+          verified.status === "waiting_for_capture"
+        ) {
+          return res.json({
+            verified: false,
+            payment_status: verified.status,
+            description:
+              "Платёж ещё обрабатывается. Обновите страницу через минуту или откройте приложение позже.",
+          });
+        }
         return res.json({
-          verified: true,
-          payment_status: status,
+          verified: false,
+          payment_status: verified.status || "unknown",
           description:
-            "Вы активировали VIP. Полный доступ включён и уже записан в аккаунт.",
+            "Оплата не завершена или отменена. Если списали деньги — подождите несколько минут и обновите страницу.",
         });
-      } catch (e) {
-        return res.json({
-          verified: true,
-          payment_status: status,
-          warning: "vip_not_written",
-          description:
-            "Оплата подтверждена, но не удалось записать VIP в Firestore. Проверьте FIREBASE_SERVICE_ACCOUNT_JSON и попробуйте снова.",
-          details: String((e && e.message) || e || "unknown"),
+      }
+      return res.status(200).json({
+        verified: false,
+        payment_status: verified.status || null,
+        description:
+          "Не удалось подтвердить оплату в YooKassa. Попробуйте позже.",
+      });
+    }
+
+    try {
+      await grantVipByEmail(email, paymentId);
+      return res.json({
+        verified: true,
+        payment_status: "succeeded",
+        description:
+          "Вы активировали VIP. Полный доступ включён и уже записан в аккаунт.",
+      });
+    } catch (e) {
+      return res.json({
+        verified: true,
+        payment_status: "succeeded",
+        warning: "vip_not_written",
+        description:
+          "Оплата подтверждена, но не удалось записать VIP в Firestore. Проверьте FIREBASE_SERVICE_ACCOUNT_JSON и попробуйте снова.",
+        details: String((e && e.message) || e || "unknown"),
+      });
+    }
+  } catch (error) {
+    console.error("verify-vip-payment:", error);
+    return res.status(500).json({ error: error.message || String(error) });
+  }
+});
+
+/**
+ * Приложение: подтверждение VIP только после Firestore / pending / проверки payment_id в YooKassa.
+ */
+app.post("/sync-vip-payment", async (req, res) => {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!token) {
+    return res.status(401).json({ granted: false, reason: "no_token" });
+  }
+  try {
+    ensureAdmin();
+    const decoded = await admin.auth().verifyIdToken(token);
+    const uid = decoded.uid;
+    const email =
+      normalizeEmail(decoded.email) ||
+      normalizeEmail(req.body && req.body.email);
+    if (!email || !isValidEmail(email)) {
+      return res.status(400).json({ granted: false, reason: "invalid_email" });
+    }
+
+    const db = admin.firestore();
+    if (await isEmailPurchaseHistoryRevoked(db, email)) {
+      const paymentId = String((req.body && req.body.payment_id) || "").trim();
+      if (paymentId) {
+        const verified = await verifyYooKassaPaymentSucceeded(paymentId, email);
+        if (verified.ok) {
+          await grantVipByEmail(email, paymentId);
+          return res.status(200).json({ granted: true, reason: "verified_payment" });
+        }
+      }
+      return res.status(200).json({ granted: false, reason: "purchase_history_revoked" });
+    }
+
+    const userSnap = await db.collection("users").doc(uid).get();
+    if (readVipFromUserData(userSnap.data())) {
+      return res.status(200).json({ granted: true, reason: "already_vip" });
+    }
+
+    const paymentId = String((req.body && req.body.payment_id) || "").trim();
+    if (paymentId) {
+      const verified = await verifyYooKassaPaymentSucceeded(paymentId, email);
+      if (verified.ok) {
+        await grantVipByEmail(email, paymentId);
+        return res.status(200).json({ granted: true, reason: "verified_payment" });
+      }
+      if (verified.reason === "not_paid") {
+        return res.status(200).json({
+          granted: false,
+          reason: "payment_not_succeeded",
+          payment_status: verified.status || "unknown",
         });
       }
     }
 
-    if (status === "pending" || status === "waiting_for_capture") {
-      return res.json({
-        verified: false,
-        payment_status: status,
-        description:
-          "Платёж ещё обрабатывается. Обновите страницу через минуту или откройте приложение позже.",
-      });
-    }
-
-    return res.json({
-      verified: false,
-      payment_status: status || "unknown",
-      description:
-        "Оплата не завершена или отменена. Если списали деньги — подождите несколько минут и обновите страницу.",
-    });
+    const result = await claimPendingVIPForAuthenticatedUser(uid, email);
+    return res.status(200).json(result);
   } catch (error) {
-    console.error("verify-vip-payment:", error);
-    return res.status(500).json({ error: error.message || String(error) });
+    console.error("sync-vip-payment:", error);
+    return res.status(401).json({ granted: false, reason: "auth_failed" });
   }
 });
 
@@ -681,8 +789,7 @@ async function claimPendingVIPForAuthenticatedUser(uid, rawEmail) {
   const pid = pendingDocId(email);
   const pendingRef = db.collection("vip_pending_by_email").doc(pid);
   const pendingSnap = await pendingRef.get();
-  const hasPaid = await emailHasSuccessfulPayment(db, email);
-  if (!pendingSnap.exists && !hasPaid) {
+  if (!pendingSnap.exists) {
     return { granted: false, reason: "no_payment" };
   }
   await db.collection("users").doc(uid).set(
@@ -699,7 +806,7 @@ async function claimPendingVIPForAuthenticatedUser(uid, rawEmail) {
   }
   return {
     granted: true,
-    reason: pendingSnap.exists ? "claimed_pending" : "restored_from_payment",
+    reason: "claimed_pending",
   };
 }
 
