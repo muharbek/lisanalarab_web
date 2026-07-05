@@ -323,6 +323,48 @@ body {
   text-align: center;
 }
 
+.payment-success-panel--hero {
+  margin: 0 0 1.5rem;
+  padding: 1.65rem 1.35rem 1.35rem;
+  border-width: 2px;
+  box-shadow:
+    0 0 0 1px rgba(110, 231, 183, 0.25),
+    0 12px 40px rgba(72, 199, 142, 0.22);
+  animation: successGlow 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes successGlow {
+  from {
+    box-shadow:
+      0 0 0 1px rgba(110, 231, 183, 0.2),
+      0 10px 32px rgba(72, 199, 142, 0.18);
+  }
+  to {
+    box-shadow:
+      0 0 0 1px rgba(212, 175, 55, 0.35),
+      0 16px 48px rgba(72, 199, 142, 0.32);
+  }
+}
+
+.payment-success-panel--hero .payment-success-panel__badge {
+  width: 3.25rem;
+  height: 3.25rem;
+  font-size: 1.55rem;
+}
+
+.payment-success-panel--hero .payment-success-panel__title {
+  font-size: 1.65rem;
+}
+
+.checkout-form-block--dimmed {
+  opacity: 0.72;
+  pointer-events: auto;
+}
+
+.activation-card--paid .panel-title {
+  color: var(--gold-bright);
+}
+
 .payment-success-panel {
   margin: 0 0 1.35rem;
   padding: 1.25rem 1.15rem 1.1rem;

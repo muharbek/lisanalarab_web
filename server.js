@@ -34,6 +34,8 @@ app.get("/", (_req, res) => {
     service: "lisanalarab-backend",
     createPayment: "POST /create-payment",
     verifyPayment: "POST /verify-vip-payment",
+    vipStatus: "GET /vip-status",
+    claimPendingVIP: "POST /claim-pending-vip",
     yookassaWebhook: "POST /yookassa-webhook",
   });
 });
@@ -100,6 +102,7 @@ async function grantVipByEmail(email, paymentId) {
     db.collection("users").doc(uid),
     {
       is_vip: true,
+      isVip: true,
       vip_purchase_email: email,
       vip_updated_at: admin.firestore.FieldValue.serverTimestamp(),
       last_payment_id: paymentId || null,
@@ -534,6 +537,7 @@ app.post("/yookassa-webhook", async (req, res) => {
         db.collection("users").doc(user.uid),
         {
           is_vip: true,
+          isVip: true,
           vip_purchase_email: email,
           vip_updated_at: admin.firestore.FieldValue.serverTimestamp(),
         },
@@ -570,6 +574,135 @@ app.post("/yookassa-webhook", async (req, res) => {
   } catch (error) {
     console.error("yookassa-webhook:", error);
     return res.status(500).send("error");
+  }
+});
+
+app.options("/vip-status", (_req, res) => res.sendStatus(204));
+app.options("/claim-pending-vip", (_req, res) => res.sendStatus(204));
+
+function isValidEmail(email) {
+  if (!email || email.length > 254) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function readVipFromUserData(data) {
+  if (!data || typeof data !== "object") return false;
+  return data.is_vip === true || data.isVip === true;
+}
+
+async function emailHasSuccessfulPayment(db, email) {
+  const pending = await db
+    .collection("vip_pending_by_email")
+    .doc(pendingDocId(email))
+    .get();
+  if (pending.exists) return true;
+  const paid = await db
+    .collection("yookassa_processed_payments")
+    .where("email", "==", email)
+    .limit(1)
+    .get();
+  return !paid.empty;
+}
+
+async function getVipStatusForEmail(rawEmail) {
+  const email = normalizeEmail(rawEmail);
+  if (!email || !isValidEmail(email)) {
+    return { status: "invalid_email", email: "" };
+  }
+  ensureAdmin();
+  const db = admin.firestore();
+  const pid = pendingDocId(email);
+  const pendingSnap = await db.collection("vip_pending_by_email").doc(pid).get();
+  try {
+    const user = await admin.auth().getUserByEmail(email);
+    const uid = user.uid;
+    const userSnap = await db.collection("users").doc(uid).get();
+    if (readVipFromUserData(userSnap.data())) {
+      return { status: "active", email, uid };
+    }
+    if (pendingSnap.exists || (await emailHasSuccessfulPayment(db, email))) {
+      return { status: "pending", email, uid };
+    }
+    return { status: "none", email, uid };
+  } catch {
+    if (pendingSnap.exists || (await emailHasSuccessfulPayment(db, email))) {
+      return { status: "paid_pending_account", email };
+    }
+    return { status: "none", email };
+  }
+}
+
+async function claimPendingVIPForAuthenticatedUser(uid, rawEmail) {
+  const email = normalizeEmail(rawEmail);
+  if (!email || !isValidEmail(email)) {
+    return { granted: false, reason: "invalid_email" };
+  }
+  ensureAdmin();
+  const db = admin.firestore();
+  const userSnap = await db.collection("users").doc(uid).get();
+  if (readVipFromUserData(userSnap.data())) {
+    return { granted: true, reason: "already_vip" };
+  }
+  const pid = pendingDocId(email);
+  const pendingRef = db.collection("vip_pending_by_email").doc(pid);
+  const pendingSnap = await pendingRef.get();
+  const hasPaid = await emailHasSuccessfulPayment(db, email);
+  if (!pendingSnap.exists && !hasPaid) {
+    return { granted: false, reason: "no_payment" };
+  }
+  await db.collection("users").doc(uid).set(
+    {
+      is_vip: true,
+      isVip: true,
+      vip_purchase_email: email,
+      vip_updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+  if (pendingSnap.exists) {
+    await pendingRef.delete();
+  }
+  return {
+    granted: true,
+    reason: pendingSnap.exists ? "claimed_pending" : "restored_from_payment",
+  };
+}
+
+app.get("/vip-status", async (req, res) => {
+  try {
+    const email = normalizeEmail(req.query && req.query.email);
+    if (!email || !isValidEmail(email)) {
+      return res.status(400).json({ status: "invalid_email" });
+    }
+    const result = await getVipStatusForEmail(email);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("vip-status:", error);
+    return res.status(503).json({ status: "error" });
+  }
+});
+
+app.post("/claim-pending-vip", async (req, res) => {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!token) {
+    return res.status(401).json({ granted: false, reason: "no_token" });
+  }
+  try {
+    ensureAdmin();
+    const decoded = await admin.auth().verifyIdToken(token);
+    const uid = decoded.uid;
+    const email =
+      normalizeEmail(decoded.email) ||
+      normalizeEmail(req.body && req.body.email);
+    if (!email || !isValidEmail(email)) {
+      return res.status(400).json({ granted: false, reason: "invalid_email" });
+    }
+    const result = await claimPendingVIPForAuthenticatedUser(uid, email);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("claim-pending-vip:", error);
+    return res.status(401).json({ granted: false, reason: "auth_failed" });
   }
 });
 

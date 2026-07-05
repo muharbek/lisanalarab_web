@@ -59,6 +59,13 @@
   function showSuccessPanel(email) {
     if (!successPanel) return;
     successPanel.hidden = false;
+    var card = document.querySelector(".activation-card");
+    if (card) card.classList.add("activation-card--paid");
+    var formBlock = document.getElementById("checkout-form-block");
+    if (formBlock) formBlock.classList.add("checkout-form-block--dimmed");
+    try {
+      successPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (e) {}
   }
 
   function setSuccessStatus(text, tone) {
@@ -85,7 +92,7 @@
     var status = data && data.status;
     if (status === "active") {
       setSuccessStatus(
-        "Всё оплачено. VIP активен — откройте приложение с этой почтой.",
+        "VIP активен. Откройте приложение — полный доступ включится автоматически.",
         "success"
       );
       msg("", null);

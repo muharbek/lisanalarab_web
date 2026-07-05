@@ -13,7 +13,7 @@
     content="https://lisanalarab-backend-5lbb.onrender.com/vip-status"
   />
   <meta name="description" content="«Лисан аль-Араб»: полный доступ ко всем блокам, в том числе к «Истории», неограниченное время обучения и работа без рекламы." />
-  <meta name="lisan-site-revision" content="20260705-send-password" />
+  <meta name="lisan-site-revision" content="20260705-vip-sync" />
   <title>Лисан аль-Араб · Полный доступ</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -83,6 +83,23 @@
       <div class="panel-inner activation-card">
         <h2 id="access-heading" class="panel-title">Оплата полного доступа</h2>
 
+        <section
+          id="payment-success-panel"
+          class="payment-success-panel payment-success-panel--hero"
+          hidden
+          aria-labelledby="payment-success-heading"
+        >
+          <div class="payment-success-panel__badge" aria-hidden="true">✓</div>
+          <h3 id="payment-success-heading" class="payment-success-panel__title">Оплата прошла успешно</h3>
+          <p id="payment-success-body" class="payment-success-panel__body"></p>
+          <p id="payment-success-status" class="payment-success-panel__status" role="status" aria-live="polite"></p>
+          <div class="payment-success-panel__actions">
+            <a href="lisanalarab://vip-return" class="btn-open-app">Открыть приложение</a>
+            <button type="button" id="recheck-vip-status" class="btn-recheck-vip">Проверить подписку</button>
+          </div>
+        </section>
+
+        <div id="checkout-form-block" class="checkout-form-block">
         <div class="panel-tariff panel-tariff--lead" role="region" aria-labelledby="panel-tariff-heading">
           <h3 id="panel-tariff-heading" class="panel-tariff__title">Оплата подписки</h3>
           <p class="panel-tariff__plan">Полный доступ к курсу</p>
@@ -131,22 +148,8 @@
             Если оплата всё равно не проходит — попробуйте другую сеть или перезапустите страницу и повторите попытку.
           </p>
         </aside>
+        </div>
 
-        <section
-          id="payment-success-panel"
-          class="payment-success-panel"
-          hidden
-          aria-labelledby="payment-success-heading"
-        >
-          <div class="payment-success-panel__badge" aria-hidden="true">✓</div>
-          <h3 id="payment-success-heading" class="payment-success-panel__title">Оплата прошла успешно</h3>
-          <p id="payment-success-body" class="payment-success-panel__body"></p>
-          <p id="payment-success-status" class="payment-success-panel__status" role="status" aria-live="polite"></p>
-          <div class="payment-success-panel__actions">
-            <a href="lisanalarab://vip-return" class="btn-open-app">Открыть приложение</a>
-            <button type="button" id="recheck-vip-status" class="btn-recheck-vip">Проверить подписку</button>
-          </div>
-        </section>
       </div>
     </section>
 
